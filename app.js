@@ -1,7 +1,7 @@
-/*! Notenheft 5.6 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 5.7 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.6.1';
+  const APP_VERSION = '5.7.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -226,7 +226,7 @@
     lastActivity: now(), hiddenAt: null
   };
 
-  const MAPS = ['classes', 'students', 'entries', 'events', 'holidays', 'assessments', 'results', 'overrides', 'warnings', 'obs', 'reminders', 'todos', 'kmkeys'];
+  const MAPS = ['classes', 'students', 'entries', 'events', 'holidays', 'assessments', 'results', 'overrides', 'warnings', 'obs', 'reminders', 'todos', 'kmkeys', 'calendars'];
   const NT = { muendlich: 'erfassen', tests: 'leistungen', uebersicht: 'uebersicht', zeugnis: 'zeugnis' };
   const NT_REV = { erfassen: 'muendlich', leistungen: 'tests', uebersicht: 'uebersicht', zeugnis: 'zeugnis' };
   Object.defineProperty(S, 'notenTab', { configurable: true, enumerable: true, get() { return NT[S.courseTab] || 'erfassen'; }, set(v) { S.courseTab = NT_REV[v] || 'muendlich'; } });
@@ -1726,6 +1726,9 @@
     const items = [];
     for (const e of eventsOn(t)) items.push(`<li>${picto(e.type === 'pruefung' ? 'pruefung' : e.type === 'ausfall' ? 'ausfall' : 'termin', 'sm')}<span><b>${esc(evTitle(e))}</b>${e.classId ? ` · ${esc(clsLabel(S.data.classes[e.classId]))}` : ''}${e.time ? ` · ${esc(e.time)} Uhr` : ''}</span></li>`);
     for (const x of todosHeute(t).filter(x => todoDue(x) <= t)) items.push(`<li>${picto('todo', 'sm')}<span><b>${esc(x.text || x.title || 'To-do')}</b> · To-do</span></li>`);
+    const cal = calItemsOn(t), schule = cal.filter(x => x.art === 'schule'), privat = cal.filter(x => x.art === 'privat');
+    items.push(...schule.map(calLi));
+    if (privat.length) items.push(`<li class="tb-sub">Privat</li>`, ...privat.map(calLi));
     const hc = holidayCountdown(t);
     const cd = !hc ? '' : hc.now ? `<div class="tb-count"><b>${esc(hc.now.name)}</b><span>bis ${fmtISO(hc.now.to, true)}</span></div>`
       : `<div class="tb-count"><b>${hc.n}</b><span>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</span></div>`;
@@ -1835,7 +1838,7 @@
 
     // 2. Termine des Tages
     html += `<section class="section" id="h-termine"><div class="section-head"><h2>${picto('termin', 'sm')} Termine ${isToday ? 'heute' : 'an diesem Tag'}</h2><button type="button" class="link" data-action="newEvent" data-date="${d}" data-type="termin">${icon('plus')} Termin</button></div>
-      ${evs.length ? `<div class="ev-list">${evs.map(e => eventRow(e)).join('')}</div>` : `<p class="empty-line">Keine Termine ${isToday ? 'heute' : 'an diesem Tag'}.</p>`}</section>`;
+      ${evs.length || calItemsOn(d).length ? `<div class="ev-list">${evs.map(e => eventRow(e)).join('')}${calItemsOn(d).map(x => calRow(x, d)).join('')}</div>` : `<p class="empty-line">Keine Termine ${isToday ? 'heute' : 'an diesem Tag'}.</p>`}</section>`;
 
     // 3. Erinnerungen: was in den nächsten 3 Tagen bevorsteht
     html += `<section class="section" id="h-bald"><div class="section-head"><h2>${picto('warn', 'sm')} Bald – die nächsten 3 Tage</h2><button type="button" class="link" data-action="goto" data-view="termine">Alle ${icon('right')}</button></div>
@@ -1957,7 +1960,7 @@
   }
 
   /* ---------- Termine & Ausfälle ---------- */
-  const TFILTERS = [['alle', 'Alle', 'termin'], ['pruefung', 'Prüfungen', 'pruefung'], ['ausfall', 'Ausfälle', 'ausfall'], ['tausch', 'Tausch', 'tausch'], ['termin', 'Termine', 'termin'], ['frei', 'Ferien & Feiertage', 'ferien']];
+  const TFILTERS = [['alle', 'Alle', 'termin'], ['pruefung', 'Prüfungen', 'pruefung'], ['ausfall', 'Ausfälle', 'ausfall'], ['tausch', 'Tausch', 'tausch'], ['termin', 'Termine', 'termin'], ['frei', 'Ferien & Feiertage', 'ferien'], ['kal-schule', 'Schulkalender', 'termin'], ['kal-privat', 'Privat', 'termin']];
   function viewTermine() {
     const t = todayISO(), tc = termCfg();
     const f = S.tFilter || 'alle';
@@ -1967,7 +1970,11 @@
       <label class="fchip toggle"><input type="checkbox" data-change="tPast" ${S.tPast ? 'checked' : ''}> vergangene</label></div>`;
     const from = S.tPast ? tc.start : addDaysISO(t, -1);
     let items = [];
-    if (f !== 'frei') items = live(S.data.events).filter(e => (f === 'alle' || e.type === f) && e.date >= from).map(e => ({ date: e.date, html: eventRow(e, { showCountdown: true }) }));
+    if (f === 'kal-schule' || f === 'kal-privat') {
+      const art = f === 'kal-privat' ? 'privat' : 'schule';
+      for (let d = from; d <= addDaysISO(t, 120); d = addDaysISO(d, 1)) for (const x of calItemsOn(d)) if (x.art === art && x.start.slice(0, 10) === d) items.push({ date: d, html: calRow(x, d) });
+      if (!live(S.data.calendars).length) html += '<p class="muted small pad">Noch keine Kalender – sie kommen automatisch vom PC (Klausurmanager).</p>';
+    } else if (f !== 'frei') items = live(S.data.events).filter(e => (f === 'alle' || e.type === f) && e.date >= from).map(e => ({ date: e.date, html: eventRow(e, { showCountdown: true }) }));
     if (f === 'alle' || f === 'frei') {
       for (const h of live(S.data.holidays)) if (h.to >= from) items.push({ date: h.from, html: `<div class="ev-row static">${picto('ferien')}<span class="ev-date"><b>${WD[wdOf(h.from)]}</b>${fmtISO(h.from)}</span><span class="ev-main"><strong>${esc(h.name)}</strong><small>${fmtISO(h.from, true)}${h.to !== h.from ? ' – ' + fmtISO(h.to, true) : ''} · ${plural(diffDays(h.from, h.to) + 1, 'Tag', 'Tage')}</small></span></div>` });
       for (const y of [tc.sy, tc.sy + 1]) for (const [iso, name] of feiertage(y)) if (iso >= from && iso <= tc.end && iso >= tc.start) items.push({ date: iso, html: `<div class="ev-row static">${picto('feiertag')}<span class="ev-date"><b>${WD[wdOf(iso)]}</b>${fmtISO(iso)}</span><span class="ev-main"><strong>${esc(name)}</strong><small>gesetzlicher Feiertag NRW${wdOf(iso) >= 5 ? ' (Wochenende)' : ''}</small></span></div>` });
@@ -2847,7 +2854,8 @@
         try {
           const got = await GH.get(Object.assign({}, g, { path: f.path }));
           if (!got) continue;
-          p = kmCheck(await kmDecrypt(got.blob));
+          const obj = await kmDecrypt(got.blob);
+          p = obj && obj.format === 'km-kalender' ? kmCalCheck(obj) : kmCheck(obj);
         } catch (e) {
           console.warn('Klausurmanager-Eingang', f.name, e.message);
           if (e.code === 'KM_KEY') { seen[f.name] = f.sha; ch = true; }
@@ -2855,7 +2863,7 @@
         }
         if (!S.data) return;
         seen[f.name] = f.sha; ch = true;
-        kmReport(kmProcess(p), p);
+        if (p.kalender) kmCalReport(kmCalApply(p), p); else kmReport(kmProcess(p), p);
       }
       if (kmRetryPending() || ch) { persistLocal(); softRender(); }
     } finally { kmRunning = false; }
@@ -2882,7 +2890,9 @@
   async function kmImportText(text) {
     try {
       const raw = String(text || '').trim();
-      const p = kmCheck(await kmDecrypt(JSON.parse(raw.slice(raw.indexOf('{')))));
+      const obj = await kmDecrypt(JSON.parse(raw.slice(raw.indexOf('{'))));
+      if (obj && obj.format === 'km-kalender') { const c = kmCalCheck(obj); kmCalReport(kmCalApply(c), c, true); persistLocal(); render(); return true; }
+      const p = kmCheck(obj);
       const r = kmProcess(p);
       persistLocal();
       kmReport(r, p);
@@ -2905,6 +2915,56 @@
       actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', cls: 'primary', run: root => root.querySelector('#m-km').value.trim() || false }]
     });
     if (text) await kmImportText(text);
+  }
+  /* ---------- Kalender aus dem Klausurmanager: Outlook-Schulkonto, Google (privat), WebUntis ---------- */
+  const CAL_DT = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/;
+  function kmCalCheck(p) {
+    if (!p || p.format !== 'km-kalender' || !/^[a-z0-9_-]{1,30}$/.test(p.quelle || '') || !['schule', 'privat', 'untis'].includes(p.art) || !Array.isArray(p.termine))
+      throw new Error('Die Kalenderdatei ist unvollständig.');
+    return {
+      kalender: true, quelle: p.quelle, name: String(p.name || p.quelle).slice(0, 40), art: p.art, stand: Number(p.stand) || now(),
+      termine: p.termine.filter(t => t && CAL_DT.test(t.start || '') && CAL_DT.test(t.ende || t.start)).slice(0, 5000).map(t => ({
+        id: String(t.id || '').slice(0, 40), start: t.start, ende: t.ende || t.start, ganztags: !!t.ganztags,
+        titel: String(t.titel || '').slice(0, 120), ort: String(t.ort || '').slice(0, 80), entfall: !!t.entfall }))
+    };
+  }
+  function kmCalApply(p) {
+    const old = S.data.calendars[p.quelle];
+    if (old && !old.deleted && (old.updatedAt || 0) >= p.stand) return { n: 0, aus: 0 };
+    let aus = 0;
+    commit(d => {
+      d.calendars[p.quelle] = { id: p.quelle, name: p.name, art: p.art, stand: p.stand, termine: p.termine, updatedAt: p.stand };
+      if (p.art !== 'untis') return;
+      // WebUntis: Entfall einer eigenen Stunde → Ausfall für diesen Kurs (eine Löschung im Notenheft bleibt bestehen)
+      for (const t of p.termine.filter(x => x.entfall && !x.ganztags)) {
+        const date = t.start.slice(0, 10), time = t.start.slice(11, 16);
+        for (const l of lessonsOn(date).filter(x => !x.away && x.start === time)) {
+          const id = 'untis-' + t.id + '-' + l.cls.id, prev = d.events[id];
+          if (prev) continue;
+          d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date, note: 'Entfall laut WebUntis', updatedAt: p.stand };
+          aus++;
+        }
+      }
+    });
+    return { n: p.termine.length, aus };
+  }
+  function kmCalReport(r, p, loud = false) {
+    if (r.aus) toast(`WebUntis: ${plural(r.aus, 'Ausfall', 'Ausfälle')} eingetragen`, { ms: 5000 });
+    else if (loud) toast(`${p.name}: ${plural(r.n, 'Termin', 'Termine')} übernommen`);
+  }
+  const calTime = t => t.ganztags ? 'ganztägig' : t.start.slice(11, 16);
+  function calItemsOn(iso) { // Kalendertermine eines Tages; WebUntis nur Vertretungen (Stunden, die nicht im eigenen Plan stehen)
+    const out = [];
+    for (const c of live(S.data.calendars)) for (const t of c.termine || []) {
+      if (iso < t.start.slice(0, 10) || iso > t.ende.slice(0, 10)) continue;
+      if (c.art === 'untis') { if (t.entfall || t.ganztags || lessonsOn(iso).some(l => l.start === t.start.slice(11, 16))) continue; }
+      out.push(Object.assign({}, t, { art: c.art === 'privat' ? 'privat' : 'schule', untis: c.art === 'untis' }));
+    }
+    return out.sort((a, b) => (a.ganztags ? '0' : '1' + a.start).localeCompare(b.ganztags ? '0' : '1' + b.start));
+  }
+  const calLi = t => `<li class="cal-li ${t.art}"><i class="cal-dot"></i><span><b>${calTime(t)}</b> ${t.untis ? 'Vertretung: ' : ''}${esc(t.titel || 'Termin')}${t.ort ? ` <small class="muted">· ${esc(t.ort)}</small>` : ''}</span></li>`;
+  function calRow(t, iso) {
+    return `<div class="ev-row static cal-row ${t.art}">${picto('termin')}<span class="ev-date"><b>${WD[wdOf(iso)]}</b>${fmtISO(iso)}</span><span class="ev-main"><strong>${t.untis ? 'Vertretung: ' : ''}${esc(t.titel || 'Termin')}</strong><small>${calTime(t)}${t.ort ? ' · ' + esc(t.ort) : ''} · ${t.art === 'privat' ? 'Privat' : 'Schulkalender'}</small></span></div>`;
   }
   function kmPendingPanel(c) {
     const pend = kmPendingList();
@@ -3391,6 +3451,7 @@
         <h2>${icon('exam')} Klausurmanager</h2>
         <p class="muted small">Die Noten jeder im Klausurmanager ausgewerteten Klausur kommen automatisch unter <strong>Kurs → Arbeiten/Klausuren</strong> an. Übertragen werden nur Kürzel und Noten – verschlüsselt, lesbar nur für dein Notenheft.</p>
         ${kmKey() ? `<p class="ok-t small">Verbindungscode erstellt am ${fmtDate(new Date(kmKey().createdAt), true)}.${kmPendingList().length ? ` ${plural(kmPendingList().length, 'Ergebnis wartet', 'Ergebnisse warten')} auf Zuordnung (Kurs → Arbeiten/Klausuren).` : ''}</p>` : '<p class="muted small">Noch nicht verbunden: „Verbindungscode“ antippen und den Code einmal am PC an den Klausurmanager geben.</p>'}
+        ${live(S.data.calendars).length ? `<p class="muted small">Kalender vom PC: ${live(S.data.calendars).map(c => `${esc(c.name)} (${plural((c.termine || []).length, 'Termin', 'Termine')}, Stand ${fmtDate(new Date(c.stand), true)})`).join(' · ')}</p>` : ''}
         <div class="btnrow">
           <button type="button" class="btn ${kmKey() ? '' : 'primary'}" data-action="kmCode">${icon('key')} Verbindungscode</button>
           ${kmKey() && ghReady() ? `<button type="button" class="btn" data-action="kmFetch">${icon('download')} Jetzt abholen</button>` : ''}
@@ -4628,5 +4689,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, kmImportText };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, kmImportText, kmCalCheck, kmCalApply, calItemsOn };
 })();

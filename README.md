@@ -1,6 +1,15 @@
-# Notenheft 5.6 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 5.7 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 5.7 – Kalender
+
+- Der PC (Klausurmanager) schickt stündlich deine Kalender verschlüsselt ins Notenheft: **Schulkalender** aus Outlook (nur Schulkonto: „Kalender“ und „Termine SHG“), **Privat** aus Google und **WebUntis**.
+- Sichtbar auf **Start** (Kasten „Heute“, getrennt Schule/Privat), unter **Heute** und unter **Termine** mit den Filtern „Schulkalender“ und „Privat“.
+- **WebUntis:** Entfällt eine eigene Stunde, trägt das Notenheft automatisch einen Ausfall ein. Vertretungen erscheinen als Termin.
+- **Datenschutz:** Schülernamen in Termintiteln werden am PC vor dem Senden durch „Kürzel (Klasse)“ ersetzt. Beschreibungen und Teilnehmende werden nie übertragen. Andere Namen (Eltern, Kolleg·innen) bitte nicht in Termintitel schreiben.
+- Einrichtung Google/WebUntis am PC: `python3 skripte
+otenheft_kalender.py einrichten` (fragt nach den geheimen iCal-Adressen; sie bleiben nur auf dem PC).
 
 ## Neu in Version 5.6
 

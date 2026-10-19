@@ -1317,3 +1317,8 @@ body.swiping main.main { box-shadow: -10px 0 30px rgba(16, 24, 40, .14); backgro
 .past-aus summary { cursor: pointer; color: var(--muted); font-size: 14px; margin: 8px 2px; }
 /* zweite Kurve: schriftlich */
 .cl-s { fill: none; stroke: var(--ser-s); stroke-width: 2; stroke-dasharray: 6 4; stroke-linejoin: round; }
+/* Kalender vom PC: Schule blau, Privat grün */
+.cal-li .cal-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.cal-li.privat .cal-dot { background: var(--ok); }
+.today-banner .tb-sub { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+.cal-row.privat .ev-main strong { color: var(--ok); }
