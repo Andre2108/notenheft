@@ -1,7 +1,7 @@
 /*! Notenheft 5.7 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.7.0';
+  const APP_VERSION = '5.7.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2833,10 +2833,19 @@
     if (r.skipped) return;
     toast(`Klausurmanager: „${p.titel}“ – ${plural(r.n, 'Note', 'Noten')} in ${clsLabel(r.c)}${r.missing.length ? ` · ${plural(r.missing.length, 'Kürzel', 'Kürzel')} ohne Kind (Kürzel-Tabelle einlesen)` : ''}`, { ms: 6000 });
   }
+  const kmIsTest = id => /^ewh-notentest-/.test(id || ''); // Notenabgleich des Klausurmanagers – nie ins Notenheft
   function kmRetryPending() { // z. B. nachdem die Kürzel-Tabelle eingelesen oder der Kurs auf dem anderen Gerät zugeordnet wurde
     let ch = false;
+    const pend = S.device.kmPending || {};
+    for (const k of Object.keys(pend)) if (kmIsTest(k) || kmIsTest(pend[k].id)) { delete pend[k]; ch = true; }
+    if (live(S.data.assessments).some(a => kmIsTest(a.km))) commit(d => {
+      for (const a of live(d.assessments).filter(x => kmIsTest(x.km))) {
+        for (const r of Object.values(d.results)) if (!r.deleted && r.assessmentId === a.id) d.results[r.id] = { id: r.id, deleted: true, updatedAt: now() };
+        d.assessments[a.id] = { id: a.id, deleted: true, updatedAt: now() };
+      }
+    });
     for (const p of kmPendingList()) { if (!kmFindClass(p)) continue; kmReport(kmProcess(p), p); ch = true; }
-    if (ch) persistLocal();
+    if (ch) { persistLocal(); softRender(); }
     return ch;
   }
   async function kmInbox({ force = false } = {}) {
@@ -2863,6 +2872,7 @@
         }
         if (!S.data) return;
         seen[f.name] = f.sha; ch = true;
+        if (!p.kalender && kmIsTest(p.id)) continue;
         if (p.kalender) kmCalReport(kmCalApply(p), p); else kmReport(kmProcess(p), p);
       }
       if (kmRetryPending() || ch) { persistLocal(); softRender(); }
