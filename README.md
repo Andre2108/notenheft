@@ -4,6 +4,7 @@ Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht
 
 ## Neu in Version 6.2
 
+- **Ferienwochen:** Keine Kachel „Mündliche Noten eintragen“, keine fehlenden Noten, keine Erinnerung. In der Noteneingabe steht ein Hinweis statt der Liste; die Wochen-Pfeile springen über die Ferien. Seit 6.2.1.
 - **Nachschrift-To-do:** Wer bei einer Klassenarbeit/Klausur „nicht mitgeschrieben“ hat (aus dem Klausurmanager oder von Hand), steht automatisch auf einem To-do „Nachschrift planen: …“ zur nächsten Stunde des Kurses – mit den Namen (nur auf deinen Geräten). Sobald alle eine Note haben, ist es erledigt. Ein gelöschtes Nachschrift-To-do kommt nicht wieder.
 
 ## Neu in Version 6.1

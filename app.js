@@ -1,7 +1,7 @@
 /*! Notenheft 6.2 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.2.0';
+  const APP_VERSION = '6.2.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -640,6 +640,11 @@
       if (w.was4 || (!w.was56 && w.drift)) { total++; if (!w.warned && w.drift) open++; }
     }
     return { open, total };
+  }
+  const weekHasLessons = (cid, ws) => lessonsBetween(cid, ws, addDaysISO(ws, 4)).some(l => !l.cancelled && !l.away);
+  function lessonWeek(cid, ws, dir) { // nächste (dir 1) bzw. vorige (dir -1) Woche mit Unterricht – Ferienwochen überspringen
+    for (let i = 0, w = ws; i < 12; i++) { w = addDaysISO(w, 7 * dir); if (weekHasLessons(cid, w)) return w; }
+    return addDaysISO(ws, 7 * dir);
   }
   function missingGrades(ws) { // Kurse mit Unterricht in Woche ws, in denen mündliche Noten fehlen
     const we = addDaysISO(ws, 6);
@@ -1740,7 +1745,8 @@
     const miss = sum(withKids.map(c => { const has = new Set(entriesOf(c.id, ws, we).map(e => e.studentId)); return studentsOf(c.id).filter(s => !has.has(s.id)).length; }));
     const tds = todosHeute(t);
     const tiles = [];
-    if (withKids.length) tiles.push(['startNoten', '', 'edit', 'Mündliche Noten eintragen', miss ? `diese Woche fehlen noch ${miss}` : 'alle haben diese Woche eine Note', 'c-noten']);
+    const missNow = missingGrades(ws);
+    if (withKids.some(c => weekHasLessons(c.id, ws))) { const m = sum(missNow.map(x => x.miss)); tiles.push(['startNoten', '', 'edit', 'Mündliche Noten eintragen', m ? `diese Woche fehlen noch ${m}` : 'alle haben diese Woche eine Note', 'c-noten']); }
     if (tds.length) tiles.push(['startTodos', '', 'todo', 'To-dos erledigen', `${tds.length} für heute/morgen`, 'c-todo']);
     for (const e of kmMissingResults().slice(0, 2)) tiles.push(['kmAsk', e.id, 'exam', `Noten fehlen: ${esc(e.titel)}`, `${esc(e.kurs)} · seit ${esc(e.fertig)} fertig korrigiert`, 'c-termine']);
     const fehl = missingOverview().filter(r => r.ws < weekKey(t));
@@ -2290,6 +2296,11 @@
         <button type="button" class="chip-toggle ${S.onlyMissing ? 'on' : ''}" data-action="toggleMissing">nur ohne Eintrag</button>
         <button type="button" class="chip-toggle" data-action="notHeld">${weeklyMode(cls) ? 'Woche' : 'Tag'} hat nicht stattgefunden</button>
       </div>`;
+    if (students.length && !weekHasLessons(cls.id, from)) {
+      const prev = lessonWeek(cls.id, from, -1);
+      return head.replace(/<div class="progress-line">[\s\S]*?<\/div>\s*$/, '') + `<div class="free-card">${icon('sun')}<div><strong>${esc(freeReason(addDaysISO(from, 2)) || 'Kein Unterricht in dieser Woche')}</strong><span>In dieser Woche sind keine mündlichen Noten nötig.</span></div>
+        <button type="button" class="btn small" data-action="weekGo" data-ws="${prev}">Zur KW ${isoWeek(parseISO(prev))}</button></div>`;
+    }
     if (!students.length) return head + emptyState('Keine Kinder in diesem Kurs', '', `<button type="button" class="btn primary" data-action="openCourse" data-cid="${cls.id}" data-tab="schueler">Kinder hinzufügen</button>`, 'users');
     return head + (S.mode === 'karte' ? cardView(students, byS) : listView(students, byS));
   }
@@ -4165,6 +4176,7 @@
   function openNoten(cid, date) {
     S.view = 'kurse'; S.courseId = cid; S.courseTab = 'muendlich'; S.classId = cid; S.detailStudent = null; S.assessId = null;
     if (date) { S.weekStart = weekKey(date); S.day = wdOf(date) < 5 ? date : null; }
+    if (!weekHasLessons(cid, S.weekStart)) { S.weekStart = lessonWeek(cid, S.weekStart, -1); S.day = null; }
     S.cardIdx = 0; saveUI(); render(); window.scrollTo(0, 0);
   }
 
@@ -4801,8 +4813,9 @@
     },
     monthStep(d) { S[d.k] = (S[d.k] || 0) + (+d.d); render(); },
     dayInfo(d) { dayInfo(d.date); },
-    weekPrev() { S.weekStart = addDaysISO(S.weekStart, -7); S.day = null; S.cardIdx = 0; render(); },
-    weekNext() { S.weekStart = addDaysISO(S.weekStart, 7); S.day = null; S.cardIdx = 0; render(); },
+    weekPrev() { S.weekStart = S.classId ? lessonWeek(S.classId, S.weekStart, -1) : addDaysISO(S.weekStart, -7); S.day = null; S.cardIdx = 0; render(); },
+    weekNext() { S.weekStart = S.classId ? lessonWeek(S.classId, S.weekStart, 1) : addDaysISO(S.weekStart, 7); S.day = null; S.cardIdx = 0; render(); },
+    weekGo(d) { S.weekStart = d.ws; S.day = null; S.cardIdx = 0; render(); },
     weekToday() { S.weekStart = toISO(mondayOf(new Date())); S.day = null; S.cardIdx = 0; render(); },
     setDay(d) { S.day = d.day; render(); },
     setMode(d) { S.mode = d.mode; S.cardIdx = 0; saveUI(); render(); },
@@ -5067,5 +5080,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, nsTodoSync, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
 })();
