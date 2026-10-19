@@ -1,7 +1,7 @@
-/*! Notenheft 5.7 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 5.8 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.7.1';
+  const APP_VERSION = '5.8.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -226,7 +226,7 @@
     lastActivity: now(), hiddenAt: null
   };
 
-  const MAPS = ['classes', 'students', 'entries', 'events', 'holidays', 'assessments', 'results', 'overrides', 'warnings', 'obs', 'reminders', 'todos', 'kmkeys', 'calendars'];
+  const MAPS = ['classes', 'students', 'entries', 'events', 'holidays', 'assessments', 'results', 'overrides', 'warnings', 'obs', 'reminders', 'todos', 'kmkeys', 'calendars', 'prefs'];
   const NT = { muendlich: 'erfassen', tests: 'leistungen', uebersicht: 'uebersicht', zeugnis: 'zeugnis' };
   const NT_REV = { erfassen: 'muendlich', leistungen: 'tests', uebersicht: 'uebersicht', zeugnis: 'zeugnis' };
   Object.defineProperty(S, 'notenTab', { configurable: true, enumerable: true, get() { return NT[S.courseTab] || 'erfassen'; }, set(v) { S.courseTab = NT_REV[v] || 'muendlich'; } });
@@ -801,6 +801,28 @@
       if (!r.ok) await this.fail(r);
       return 'ok';
     },
+    // Kleine Klartext-Dateien (nur ohne Personenbezug, z. B. push/status.json)
+    async getText(g, path) {
+      const r = await this.req(g, this.url(g, '/contents/' + path.split('/').map(encodeURIComponent).join('/')));
+      if (r.status === 404) return null;
+      if (!r.ok) await this.fail(r);
+      const j = await r.json();
+      return { sha: j.sha, text: unutf8(b64ToBytes((j.content || '').replace(/\s+/g, ''))) };
+    },
+    async putText(g, path, text, message) {
+      const old = await this.getText(g, path);
+      const body = { message, content: bytesToB64(utf8(text)) };
+      if (old) { if (old.text === text) return 'same'; body.sha = old.sha; }
+      const r = await this.req(g, this.url(g, '/contents/' + path.split('/').map(encodeURIComponent).join('/')), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!r.ok) await this.fail(r);
+      return 'ok';
+    },
+    async del(g, path, message) {
+      const old = await this.getText(g, path);
+      if (!old) return;
+      const r = await this.req(g, this.url(g, '/contents/' + path.split('/').map(encodeURIComponent).join('/')), { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message, sha: old.sha }) });
+      if (!r.ok && r.status !== 404) await this.fail(r);
+    },
     // Eingang des Klausurmanagers: Dateiliste eines Ordners im selben privaten Repo
     async list(g, dir) {
       const r = await this.req(g, this.url(g, '/contents/' + dir.split('/').map(encodeURIComponent).join('/')));
@@ -867,6 +889,7 @@
         if (!done) throw new Error('Konflikt beim Speichern – bitte erneut versuchen.');
         S.sync.state = 'ok'; S.sync.last = now(); S.sync.msg = '';
         kmInbox({ force }).catch(e => console.warn('Klausurmanager:', e));
+        pushStatusWrite().catch(e => console.warn('Push-Status:', e));
         if (!S.sync.nameHint && missingNames()) { S.sync.nameHint = true; toast(`Auf diesem Gerät fehlen ${missingNames()} Namen – Mehr → Namensliste importieren.`, { ms: 7000 }); }
       } catch (e) {
         console.warn('Sync:', e);
@@ -2714,6 +2737,73 @@
   }
 
   /* =====================================================================
+     Push-Nachricht am Freitag, wenn mündliche Noten fehlen
+     Eine GitHub-Aufgabe im privaten Daten-Repo schickt die Nachricht. Dafür
+     legt das Notenheft dort nur ab: das Geräte-Abo (push/abos/<id>.json) und
+     den Stand push/status.json – ausschließlich Anzahlen, keine Namen/Kurse.
+     ===================================================================== */
+  const pushOn = () => { const p = S.data?.prefs?.push; return !!(p && !p.deleted && p.on); };
+  function pushStatus() {
+    const mo = toISO(mondayOf(new Date()));
+    const withKids = classesSorted().filter(c => studentsOf(c.id).length);
+    const wochen = [];
+    for (let i = 0; i < 12; i++) {
+      const ws = addDaysISO(mo, 7 * i);
+      if (withKids.some(c => lessonsBetween(c.id, ws, addDaysISO(ws, 4)).some(l => !l.cancelled && !l.away))) wochen.push(ws);
+    }
+    const miss = missingGrades(mo);
+    return { v: 1, woche: mo, fehlen: sum(miss.map(m => m.miss)), kurse: miss.length, unterrichtswochen: wochen };
+  }
+  async function pushStatusWrite(force = false) {
+    if (!S.data || !pushOn() || !ghReady()) return;
+    const st = pushStatus(), key = JSON.stringify(st);
+    if (!force && S.device.pushLast === key) return;
+    await GH.putText(S.device.gh, 'push/status.json', JSON.stringify(Object.assign(st, { stand: new Date().toISOString() })), 'Notenheft: Notenstand');
+    S.device.pushLast = key; persistLocal();
+  }
+  function pushSupport() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+      return isIOS() ? 'Auf dem iPhone geht das nur, wenn Notenheft vom Home-Bildschirm geöffnet ist (iOS 16.4 oder neuer).' : 'Dieser Browser unterstützt keine Push-Nachrichten.';
+    return null;
+  }
+  async function pushEnable() {
+    const why = pushSupport();
+    if (why) return toast(why, { error: true, ms: 7000 });
+    if (!ghReady()) return toast('Bitte zuerst die Synchronisierung über GitHub einrichten.', { error: true });
+    const perm = await Notification.requestPermission(); // muss direkt auf den Tipp folgen (iOS)
+    if (perm !== 'granted') return toast('Mitteilungen wurden nicht erlaubt. Einstellungen → Mitteilungen → Notenheft.', { error: true, ms: 7000 });
+    try {
+      const g = S.device.gh;
+      const keyFile = await GH.getText(g, 'push/vapid-public.txt');
+      if (!keyFile) throw new Error('Im Daten-Repo fehlt die Push-Einrichtung (push/vapid-public.txt).');
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(keyFile.text.trim()) });
+      const j = sub.toJSON();
+      if (!S.device.pushId) S.device.pushId = uid();
+      await GH.putText(g, `push/abos/${S.device.pushId}.json`, JSON.stringify({ endpoint: j.endpoint, keys: j.keys, geraet: isIOS() ? 'iPhone' : 'Computer', angemeldet: new Date().toISOString() }), 'Notenheft: Gerät für Push angemeldet');
+      S.device.pushSub = true;
+      commit(d => { d.prefs.push = { id: 'push', on: true, updatedAt: now() }; });
+      await pushStatusWrite(true);
+      toast('Erinnerung eingeschaltet – freitags gegen 15 Uhr, wenn Noten fehlen.', { ms: 5000 });
+    } catch (e) { toast('Push einrichten hat nicht geklappt: ' + e.message, { error: true, ms: 7000 }); }
+  }
+  async function pushDisable() {
+    try {
+      const reg = await navigator.serviceWorker?.ready;
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+      if (S.device.pushId && ghReady()) await GH.del(S.device.gh, `push/abos/${S.device.pushId}.json`, 'Notenheft: Gerät für Push abgemeldet');
+    } catch (e) { console.warn(e); }
+    S.device.pushSub = false; persistLocal(); render();
+    toast('Auf diesem Gerät ausgeschaltet');
+  }
+  async function pushTest() {
+    try { await GH.putText(S.device.gh, 'push/test.json', JSON.stringify({ stand: new Date().toISOString() }), 'Notenheft: Testnachricht'); toast('Testnachricht angefordert – kommt in etwa einer Minute.', { ms: 5000 }); }
+    catch (e) { toast(e.message, { error: true }); }
+  }
+
+  /* =====================================================================
      Klausurmanager-Anbindung
      Der Klausurmanager (PC) verschlüsselt die Noten einer ausgewerteten
      Klausur mit dem ÖFFENTLICHEN Schlüssel dieses Notenhefts (ECDH P-256 +
@@ -3468,6 +3558,17 @@
           ${kmKey() ? `<button type="button" class="btn" data-action="kmPaste">${icon('copy')} Ergebnis einfügen</button>` : ''}
           ${kmKey() ? `<label class="btn file-btn">${icon('upload')} Ergebnisdatei importieren<input type="file" accept=".json,application/json" data-change="importKm"></label>` : ''}
         </div>
+      </section>
+
+      <section class="panel">
+        <h2>${icon('bell')} Erinnerung am Freitag</h2>
+        <p class="muted small">Freitags gegen 15 Uhr kommt eine Push-Nachricht aufs Gerät, wenn für die Woche noch mündliche Noten fehlen (nicht in Ferienwochen). Online liegt dafür nur die Anzahl fehlender Noten – keine Namen, keine Kurse.</p>
+        ${S.device.pushSub ? '<p class="ok-t small">Auf diesem Gerät eingeschaltet.</p>' : pushOn() ? '<p class="muted small">Auf einem anderen Gerät eingeschaltet.</p>' : ''}
+        <div class="btnrow">
+          ${S.device.pushSub ? `<button type="button" class="btn" data-action="pushTest">${icon('bell')} Testnachricht</button><button type="button" class="btn ghost" data-action="pushOff">Auf diesem Gerät ausschalten</button>`
+            : `<button type="button" class="btn primary" data-action="pushOn" ${ghReady() ? '' : 'disabled'}>${icon('bell')} Auf diesem Gerät einschalten</button>`}
+        </div>
+        ${isIOS() && !S.device.pushSub ? '<p class="muted small">iPhone: Notenheft muss vom Home-Bildschirm geöffnet sein (iOS 16.4 oder neuer).</p>' : ''}
       </section>
 
       <section class="panel">
@@ -4530,6 +4631,9 @@
     makeSetupCode() { makeSetupCode(); },
     kmCode() { kmShowCode().catch(e => toast(e.message, { error: true })); },
     kmPaste() { kmPasteDialog(); },
+    pushOn() { pushEnable(); },
+    pushOff() { pushDisable(); },
+    pushTest() { pushTest(); },
     async kmFetch() {
       try { await kmInbox({ force: true }); toast(kmPendingList().length ? 'Abgeholt – bitte unter Kurs → Arbeiten/Klausuren zuordnen' : 'Abgeholt'); }
       catch (e) { toast(e.message, { error: true }); }
@@ -4699,5 +4803,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, kmImportText, kmCalCheck, kmCalApply, calItemsOn };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, kmImportText, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
 })();

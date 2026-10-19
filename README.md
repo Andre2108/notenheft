@@ -1,6 +1,12 @@
-# Notenheft 5.7 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 5.8 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 5.8 – Erinnerung am Freitag
+
+- **Push-Nachricht** freitags gegen 15 Uhr, wenn für die Woche noch mündliche Noten fehlen (nicht in Ferienwochen). Einschalten auf jedem Gerät unter **Mehr → Erinnerung am Freitag → „Auf diesem Gerät einschalten“**, danach „Testnachricht“.
+- iPhone: Notenheft vom Home-Bildschirm öffnen (iOS 16.4 oder neuer) und Mitteilungen erlauben.
+- Gesendet wird von einer GitHub-Aufgabe im privaten Repo `notenheft-daten` – der PC muss nicht an sein. Online liegt dafür nur die **Anzahl** fehlender Noten, keine Namen und keine Kurse.
 
 ## Neu in Version 5.7 – Kalender
 

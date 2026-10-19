@@ -1,5 +1,5 @@
 /* Notenheft Service Worker – speichert nur den Programmcode für Offline-Nutzung, niemals Noten. */
-const CACHE = 'notenheft-v5.7.1';
+const CACHE = 'notenheft-v5.8.0';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'
@@ -32,4 +32,15 @@ self.addEventListener('fetch', e => {
     }).catch(() => undefined);
     return cached || (await network) || new Response('Offline', { status: 503 });
   })());
+});
+
+// Push-Nachricht (Erinnerung am Freitag): Inhalt kommt verschlüsselt von der GitHub-Aufgabe im Daten-Repo.
+self.addEventListener('push', e => {
+  let d = { title: 'Notenheft', body: 'Für diese Woche fehlen noch mündliche Noten.' };
+  try { if (e.data) d = Object.assign(d, e.data.json()); } catch { /* Standardtext */ }
+  e.waitUntil(self.registration.showNotification(d.title, { body: d.body, icon: './icons/icon-192.png', badge: './icons/icon-192.png', tag: 'notenheft-noten' }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => cs.length ? cs[0].focus() : self.clients.openWindow('./')));
 });
