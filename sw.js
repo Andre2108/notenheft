@@ -1,5 +1,5 @@
 /* Notenheft Service Worker – speichert nur den Programmcode für Offline-Nutzung, niemals Noten. */
-const CACHE = 'notenheft-v6.4.1';
+const CACHE = 'notenheft-v6.4.2';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'

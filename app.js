@@ -1,7 +1,7 @@
 /*! Notenheft 6.4 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.4.1';
+  const APP_VERSION = '6.4.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1902,7 +1902,7 @@
   }
 
   function heuteCounts(d) {
-    const evs = eventsOn(d).filter(e => e.type !== 'tausch'), cal = calItemsOn(d);
+    const evs = eventsOn(d).filter(e => e.type !== 'tausch'), cal = calItemsOn(d, { alle: d < todayISO() });
     return { dienst: evs.length + cal.filter(x => x.art === 'schule').length, privat: cal.filter(x => x.art === 'privat').length };
   }
   function heuteGlance(d) {
@@ -1924,7 +1924,7 @@
     let html = '';
     // 2. Termine des Tages
     html += `<section class="section" id="h-termine"><div class="section-head"><h2>${picto('termin', 'sm')} Termine ${isToday ? 'heute' : 'an diesem Tag'}</h2><button type="button" class="link" data-action="newEvent" data-date="${d}" data-type="termin">${icon('plus')} Termin</button></div>
-      ${(() => { const cal = calItemsOn(d), sch = cal.filter(x => x.art === 'schule'), pr = cal.filter(x => x.art === 'privat');
+      ${(() => { const cal = calItemsOn(d, { alle: d < todayISO() }), sch = cal.filter(x => x.art === 'schule'), pr = cal.filter(x => x.art === 'privat');
         if (!evs.length && !cal.length) return `<p class="empty-line">Keine Termine ${isToday ? 'heute' : 'an diesem Tag'}.</p>`;
         return (evs.length || sch.length ? `<h3 class="sub-label">Dienstlich</h3><div class="ev-list">${evs.map(e => eventRow(e)).join('')}${sch.map(x => calRow(x, d)).join('')}</div>` : '')
           + (pr.length ? `<h3 class="sub-label">Privat</h3><div class="ev-list">${pr.map(x => calRow(x, d)).join('')}</div>` : ''); })()}</section>`;
@@ -2135,11 +2135,11 @@
     const hasSwap = live(S.data.events).some(e => e.type === 'tausch') || classesSorted().length > 1;
     html += `<div class="chipbar">${TFILTERS.filter(x => x[0] !== 'tausch' || hasSwap).map(([k, l, p]) => `<button type="button" class="fchip ${f === k ? 'on' : ''}" data-action="tFilter" data-f="${k}">${k === 'alle' ? '' : picto(p, 'xs')}${l}</button>`).join('')}
       <label class="fchip toggle"><input type="checkbox" data-change="tPast" ${S.tPast ? 'checked' : ''}> vergangene</label></div>`;
-    const from = S.tPast ? tc.start : addDaysISO(t, -1);
+    const from = S.tPast ? tc.start : t;
     let items = [];
     if (f === 'kal-schule' || f === 'kal-privat') {
       const art = f === 'kal-privat' ? 'privat' : 'schule';
-      for (let d = from; d <= addDaysISO(t, 120); d = addDaysISO(d, 1)) for (const x of calItemsOn(d)) if (x.art === art && x.start.slice(0, 10) === d) items.push({ date: d, html: calRow(x, d) });
+      for (let d = from; d <= addDaysISO(t, 120); d = addDaysISO(d, 1)) for (const x of calItemsOn(d, { alle: !!S.tPast })) if (x.art === art && x.start.slice(0, 10) === d) items.push({ date: d, html: calRow(x, d) });
       if (!live(S.data.calendars).length) html += '<p class="muted small pad">Noch keine Kalender – sie kommen automatisch vom PC (Klausurmanager).</p>';
     } else if (f !== 'frei') items = live(S.data.events).filter(e => (f === 'alle' || e.type === f) && e.date >= from).map(e => ({ date: e.date, html: eventRow(e, { showCountdown: true }) }));
     if (f === 'alle' || f === 'frei') {
@@ -3234,10 +3234,13 @@
   const CAL_HIDE_DEFAULT = ['Offene Sprechstunde Fr. Kretschmann-Dulisch'];
   const normT = x => String(x || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const calHidden = t => { const list = (S.data.prefs?.calhide?.titles || CAL_HIDE_DEFAULT).map(normT); const n = normT(t.titel); return list.some(h => h && n.startsWith(h)); };
-  function calItemsOn(iso) { // Kalendertermine eines Tages; WebUntis nur Vertretungen (Stunden, die nicht im eigenen Plan stehen)
+  // Termin vorbei? – seit etwa einer Stunde beendet (ganztägige: ab dem Folgetag)
+  const calDone = t => t.ganztags ? t.ende.slice(0, 10) < todayISO() : new Date(t.ende).getTime() < now() - 3600000;
+  function calItemsOn(iso, { alle = false } = {}) { // Kalendertermine eines Tages; WebUntis nur Vertretungen (Stunden, die nicht im eigenen Plan stehen)
     const out = [];
     for (const c of live(S.data.calendars)) for (const t of c.termine || []) {
       if (iso < t.start.slice(0, 10) || iso > t.ende.slice(0, 10)) continue;
+      if (!alle && calDone(t)) continue;
       if (c.art === 'untis' && (t.entfall || t.ganztags || !t.aenderung)) continue; // nur ausdrücklich gekennzeichnete Vertretungen/Verlegungen
       if (calHidden(t)) continue;
       out.push(Object.assign({}, t, { art: c.art === 'privat' ? 'privat' : 'schule', untis: c.art === 'untis' }));
@@ -5159,5 +5162,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, calDone, pushStatus, pushStatusWrite, GH };
 })();

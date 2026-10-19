@@ -4,6 +4,7 @@ Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht
 
 ## Neu in Version 6.4 – Ganzjahresplanung automatisch
 
+- **Vorbei ist vorbei:** Kalendertermine verschwinden etwa eine Stunde nach ihrem Ende aus Heute, Woche und Termine (unter Termine mit „vergangene“ weiter sichtbar). Seit 6.4.2.
 - Das Notenheft ist jetzt die **einzige Stelle zum Eintragen**. Der PC erzeugt daraus stündlich (und beim Anmelden) die **Ganzjahresplanung.xlsx** in `OneDrive/Unterricht` neu: Übersicht · Countdown · Vergangene Prüfungen · Termine & Ausfälle · Ferien & Feiertage · Stundenplan · Stunden.
 - **Countdown** zeigt nur anstehende Arbeiten; Tage und Unterrichtsstunden zählt Excel täglich selbst (Ausfälle abgezogen). Geschriebene Arbeiten wandern am Folgetag nach **„Vergangene Prüfungen“** – mit festen Werten.
 - Direkte Änderungen in der Excel-Datei werden beim nächsten Lauf überschrieben. Die frühere Datei liegt als `Ganzjahresplanung_alt.xlsx` daneben. Die automatisch erzeugte Datei lässt sich nicht wieder ins Notenheft importieren (Schutz vor Doppelungen).
