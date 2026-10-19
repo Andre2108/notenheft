@@ -1,12 +1,13 @@
 /* Notenheft Service Worker – speichert nur den Programmcode für Offline-Nutzung, niemals Noten. */
-const CACHE = 'notenheft-v5.8.0';
+const CACHE = 'notenheft-v5.8.1';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' – sonst kann der Browser-Zwischenspeicher beim Update noch alte Dateien liefern
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
