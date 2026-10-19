@@ -1,7 +1,7 @@
-/*! Notenheft 6.3 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 6.4 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.3.0';
+  const APP_VERSION = '6.4.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1103,7 +1103,11 @@
   async function importPlanning(file) {
     if (!file) return;
     let plan;
-    try { plan = buildImport(await readXlsx(file)); }
+    try {
+      const sheets = await readXlsx(file);
+      if (sheets['_Notenheft']) return toast('Diese Ganzjahresplanung wird automatisch aus dem Notenheft erzeugt – Änderungen bitte direkt im Notenheft eintragen.', { error: true, ms: 7000 });
+      plan = buildImport(sheets);
+    }
     catch (e) { console.warn(e); return toast(e.message || 'Datei konnte nicht gelesen werden', { error: true }); }
     if (!plan.courses.length && !plan.events.length && !plan.holidays.length) return toast('In der Datei wurden keine passenden Tabellenblätter gefunden.', { error: true });
     const existing = classesSorted();
@@ -3291,6 +3295,27 @@
     const epk = await crypto.subtle.exportKey('jwk', einmal.publicKey);
     return { format: 'notenheft-pc', v: 1, epk: { kty: 'EC', crv: 'P-256', x: epk.x, y: epk.y }, salt: bytesToB64(salt), iv: bytesToB64(iv), ct: bytesToB64(ct) };
   }
+  // Alles für die automatisch erzeugte Ganzjahresplanung (keine Namen von Kindern)
+  function planExport() {
+    const tc = termCfg(), P = periods();
+    const kurse = classesSorted().map(c => ({ id: c.id, kurs: clsLabel(c), name: c.name, fach: c.subject || '', raum: c.room || '', stufe: levelOf(c),
+      wochenstunden: weeklyHours(c), arbeiten: { HJ1: examsRequired(c, 'HJ1'), HJ2: examsRequired(c, 'HJ2') },
+      raster: (c.slots || []).map(sl => ({ tag: sl.wd, von: sl.from, bis: sl.to, raum: sl.room || '', ab: sl.validFrom || '', bisDatum: sl.validTo || '', beginn: periodTimes(sl.from, sl.to).start, ende: periodTimes(sl.from, sl.to).end })) }));
+    const stunden = [];
+    for (let d = tc.start; d <= tc.end; d = addDaysISO(d, 1)) {
+      if (wdOf(d) >= 5) continue;
+      for (const l of lessonsOn(d)) stunden.push({ datum: d, kursId: l.cls.id, kurs: clsLabel(l.cls), von: l.from, bis: l.to, std: l.hours, beginn: l.start, ende: l.end, raum: l.room || '',
+        plan: l.away ? 'getauscht' : l.cancelled ? 'ausgefallen' : 'regulär', grund: l.away ? l.cancelled || 'Tausch' : l.cancelled || (l.swapIn ? `Tausch (statt ${swapName(l.swapFrom, l.cls)})` : '') });
+    }
+    const pruefungen = live(S.data.events).filter(e => e.type === 'pruefung' && e.classId && S.data.classes[e.classId]).map(e => {
+      const a = live(S.data.assessments).find(x => x.eventId === e.id || (x.classId === e.classId && Math.abs(diffDays(x.date, e.date)) <= 7 && x.type !== 'vokabel'));
+      return { id: e.id, datum: e.date, kursId: e.classId, kurs: clsLabel(S.data.classes[e.classId]), art: e.kind || 'Prüfung', notiz: e.note || '', noten: a ? live(S.data.results).filter(r => r.assessmentId === a.id && r.value != null).length : 0 };
+    }).sort((a, b) => a.datum.localeCompare(b.datum));
+    const feiertageListe = [];
+    for (const y of [tc.sy, tc.sy + 1]) for (const [d, n] of feiertage(y)) if (d >= tc.start && d <= tc.end) feiertageListe.push({ datum: d, name: n });
+    return { schuljahr: `${tc.sy}/${String(tc.sy + 1).slice(2)}`, start: tc.start, ende: tc.end, hj1Ende: tc.hj1End, perioden: P, kurse, stunden, pruefungen,
+      feiertage: feiertageListe.sort((a, b) => a.datum.localeCompare(b.datum)) };
+  }
   async function pcExport() {
     if (!S.data || !ghReady()) return;
     const g = S.device.gh;
@@ -3302,9 +3327,10 @@
     const termine = live(S.data.events).filter(e => e.type !== 'tausch').map(e => ({ id: e.id, datum: e.date, art: e.type, titel: evTitle(e), kurs: e.classId && S.data.classes[e.classId] ? clsLabel(S.data.classes[e.classId]) : '', notiz: e.note || '', termin: e.terminId || '' }))
       .sort((a, b) => a.datum.localeCompare(b.datum));
     const ferien = live(S.data.holidays).map(h => ({ name: h.name, von: h.from, bis: h.to })).sort((a, b) => a.von.localeCompare(b.von));
-    const key = JSON.stringify({ termine, ferien });
+    const plan = planExport();
+    const key = JSON.stringify({ termine, ferien, plan });
     if (S.device.pcLast === key) return;
-    const blob = await kmEncryptFor(S.device.pcPub, { format: 'nh-termine', v: 1, stand: now(), termine, ferien });
+    const blob = await kmEncryptFor(S.device.pcPub, { format: 'nh-termine', v: 2, stand: now(), termine, ferien, plan });
     await GH.putText(g, 'ausgang/termine.json', JSON.stringify(blob), 'Notenheft: Termine für den PC');
     S.device.pcLast = key; persistLocal();
   }
@@ -5128,5 +5154,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
 })();

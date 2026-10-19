@@ -1,6 +1,12 @@
-# Notenheft 6.3 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.4 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.4 – Ganzjahresplanung automatisch
+
+- Das Notenheft ist jetzt die **einzige Stelle zum Eintragen**. Der PC erzeugt daraus stündlich (und beim Anmelden) die **Ganzjahresplanung.xlsx** in `OneDrive/Unterricht` neu: Übersicht · Countdown · Vergangene Prüfungen · Termine & Ausfälle · Ferien & Feiertage · Stundenplan · Stunden.
+- **Countdown** zeigt nur anstehende Arbeiten; Tage und Unterrichtsstunden zählt Excel täglich selbst (Ausfälle abgezogen). Geschriebene Arbeiten wandern am Folgetag nach **„Vergangene Prüfungen“** – mit festen Werten.
+- Direkte Änderungen in der Excel-Datei werden beim nächsten Lauf überschrieben. Die frühere Datei liegt als `Ganzjahresplanung_alt.xlsx` daneben. Die automatisch erzeugte Datei lässt sich nicht wieder ins Notenheft importieren (Schutz vor Doppelungen).
 
 ## Neu in Version 6.3
 
