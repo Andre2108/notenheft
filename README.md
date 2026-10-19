@@ -1,6 +1,20 @@
-# Notenheft 5.8 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.0 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.0 – aufgeräumt
+
+- **Vier Reiter:** Heute (Start und Tagesübersicht in einem) · Planer (Woche / Termine / Jahr oben umschaltbar) · Kurse · Mehr.
+- **Heute:** Begrüßung mit deinem Namen (Mehr → „Dein Name für die Begrüßung“), Ferien-Countdown als Streifen, Kacheln **Dienstlich** und **Privat** mit der richtigen Anzahl, Termine getrennt und **aufklappbar** (Uhrzeit, Ort, bei privaten Terminen die Beschreibung).
+- **Termine ausblenden:** Termin aufklappen → „Solche Termine nie mehr anzeigen“. Die offene Sprechstunde ist von Anfang an ausgeblendet.
+- **WebUntis:** Es erscheinen nur noch Stunden, die WebUntis ausdrücklich als Vertretung, Verlegung oder Raumänderung kennzeichnet.
+- **Fehlende mündliche Noten:** eigene Übersicht je Woche und Kurs (Kachel auf Heute), ein Tipp öffnet die Eingabe. Beim Eintragen: **„Woche hat nicht stattgefunden“**. Je Kurs: **„Keine mündlichen Noten mehr eintragen“** (Kurs → Zahnrad).
+- **Klausurnoten:** Statt „Klausur auswerten“ fragt Heute nach, wenn eine Klausur seit mehr als einem Tag fertig korrigiert ist und noch keine Noten angekommen sind.
+- **To-dos** mit Uhrzeit und „am Morgen des Fälligkeitstags um 7:15 Uhr erinnern“ – als Push-Nachricht (bis zu 30 Minuten Verzögerung möglich).
+- **Termin:** „Durch den Termin fallen Stunden aus“ – Kurse ankreuzen, die Ausfälle entstehen automatisch.
+- **Excel:** Deine Termine landen automatisch (stündlich, sobald der PC an ist) in `OneDrive/Unterricht/Notenheft-Termine.xlsx` neben der Ganzjahresplanung.
+- **Fenster schließen:** einfach nach unten wischen.
+- **Jahr:** ohne „Stunden je Kurs“.
 
 ## Neu in Version 5.8 – Erinnerung am Freitag
 

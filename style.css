@@ -1322,3 +1322,20 @@ body.swiping main.main { box-shadow: -10px 0 30px rgba(16, 24, 40, .14); backgro
 .cal-li.privat .cal-dot { background: var(--ok); }
 .today-banner .tb-sub { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
 .cal-row.privat .ev-main strong { color: var(--ok); }
+
+/* 6.0: Ferien-Streifen, Planer-Umschalter, Kalender-Details, Termin-Ausfall */
+.hol-strip { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; background: var(--accent-soft); color: var(--accent); border-radius: 14px; padding: 10px 14px; margin: 0 0 12px; }
+.hol-strip b { font-size: 22px; font-weight: 800; line-height: 1; }
+.hol-strip span { color: var(--text); font-size: 14px; }
+.hol-strip .i { width: 18px; height: 18px; align-self: center; }
+.planer-seg { margin: 10px 0 4px; }
+.cal-det { border-radius: 12px; }
+.cal-det > summary { list-style: none; cursor: pointer; }
+.cal-det > summary::-webkit-details-marker { display: none; }
+.cal-det[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.cal-more { background: var(--card-2); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 12px 12px; padding: 8px 12px 10px; font-size: 14px; }
+.cal-more p { margin: 4px 0; overflow-wrap: anywhere; }
+.cal-info { white-space: pre-line; }
+.aus-pick { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.t-morning { align-self: end; }
+.modal { transition: transform .2s ease; }
