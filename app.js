@@ -1,7 +1,7 @@
-/*! Notenheft 6.2 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 6.3 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.2.1';
+  const APP_VERSION = '6.3.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -646,10 +646,11 @@
     for (let i = 0, w = ws; i < 12; i++) { w = addDaysISO(w, 7 * dir); if (weekHasLessons(cid, w)) return w; }
     return addDaysISO(ws, 7 * dir);
   }
+  const weekSkipped = (c, ws) => (c.skipWeeks || []).includes(ws);
   function missingGrades(ws) { // Kurse mit Unterricht in Woche ws, in denen mündliche Noten fehlen
     const we = addDaysISO(ws, 6);
     const out = [];
-    for (const c of classesSorted().filter(x => !x.noOral)) {
+    for (const c of classesSorted().filter(x => !x.noOral && !weekSkipped(x, ws))) {
       const st = studentsOf(c.id);
       if (!st.length) continue;
       const ls = lessonsBetween(c.id, ws, we).filter(l => !l.cancelled);
@@ -896,6 +897,7 @@
         if (!done) throw new Error('Konflikt beim Speichern – bitte erneut versuchen.');
         S.sync.state = 'ok'; S.sync.last = now(); S.sync.msg = '';
         kmInbox({ force }).catch(e => console.warn('Klausurmanager:', e));
+        try { weeklyGradeTodo(); } catch (e) { console.warn('Noten-To-do:', e); }
         pushStatusWrite().catch(e => console.warn('Push-Status:', e));
         ewhCatalogRefresh().then(() => softRender()).catch(e => console.warn('Katalog:', e));
         pcExport().catch(e => console.warn('PC-Termine:', e));
@@ -1574,6 +1576,20 @@
     ['korrektur', 'Korrigieren', 'Korrigieren'], ['vorbereiten', 'Vorbereiten', 'Material vorbereiten'], ['sonst', 'Sonstiges', '']];
   const todoCat = k => TODO_CATS.find(c => c[0] === k) || TODO_CATS[5];
   const openTodos = () => live(S.data.todos).filter(t => !t.done);
+  function weeklyGradeTodo() {
+    if (!S.data) return;
+    const ws = weekKey(todayISO()), id = 'noten-' + ws, td = S.data.todos[id];
+    const days = [4, 3, 2, 1, 0].map(i => addDaysISO(ws, i)).filter(x => !freeReason(x));
+    const withLessons = classesSorted().some(c => studentsOf(c.id).length && !c.noOral && !weekSkipped(c, ws) && weekHasLessons(c.id, ws));
+    const done = !missingGrades(ws).length;
+    if (!td) {
+      if (!days.length || !withLessons) return; // Ferienwoche: kein To-do
+      commit(d => { d.todos[id] = { id, auto: 'noten', cat: 'sonst', text: 'Mündliche Noten eintragen', classId: null, date: days[0], done, doneAt: done ? now() : null, createdAt: now(), updatedAt: now() }; }, { sync: true });
+      return;
+    }
+    if (td.deleted) return;
+    if (td.done !== done && (done || !td.doneAt || td.auto === 'noten')) commit(d => { d.todos[id] = Object.assign({}, td, { done, doneAt: done ? now() : null, updatedAt: now() }); });
+  }
   const hasLessonOn = (cid, d) => lessonsOn(d, cid).some(l => !l.away && !l.cancelled);
   function nextLessonDate(cid, after = todayISO()) { // nächster Unterrichtstag des Kurses ab heute (inkl.)
     let d = after;
@@ -1601,7 +1617,7 @@
     const meta = [course && c ? `<span class="td-c" ${ccStyle(c)}><i></i>${esc(clsLabel(c))}</span>` : '', todoWhen(x)].filter(Boolean).join(' · ');
     return `<div class="todo ${x.done ? 'done' : ''}">
       <button type="button" class="tk" data-action="todoToggle" data-id="${x.id}" aria-label="${x.done ? 'Wieder öffnen' : 'Erledigt'}">${icon('check')}</button>
-      <button type="button" class="td-main" data-action="todoEdit" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b>${x.nsFor && x.nsFor.length ? `<small class="td-ns">${esc(x.nsFor.map(sid => S.data.students[sid]?.name).filter(Boolean).join(', '))}</small>` : ''}<small>${meta}</small></span></button>
+      <button type="button" class="td-main" data-action="${x.auto === 'noten' ? 'startNoten' : 'todoEdit'}" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b>${x.nsFor && x.nsFor.length ? `<small class="td-ns">${esc(x.nsFor.map(sid => S.data.students[sid]?.name).filter(Boolean).join(', '))}</small>` : ''}<small>${meta}</small></span></button>
     </div>`;
   }
   const todoList = (xs, opts, empty = 'Nichts zu erledigen.') => xs.length ? `<div class="glist todo-list">${xs.map(x => todoRow(x, opts)).join('')}</div>` : `<p class="empty-line">${empty}</p>`;
@@ -1972,7 +1988,7 @@
     if (ps && ps > from) from = ps;
     const rows = [];
     for (let ws = weekKey(from); ws <= mo; ws = addDaysISO(ws, 7)) {
-      for (const c of classesSorted().filter(x => !x.noOral && studentsOf(x.id).length)) {
+      for (const c of classesSorted().filter(x => !x.noOral && !weekSkipped(x, ws) && studentsOf(x.id).length)) {
         const ls = lessonsBetween(c.id, ws, addDaysISO(ws, 4)).filter(l => !l.cancelled && !l.away && l.date <= t);
         if (!ls.length) continue;
         const has = new Set(entriesOf(c.id, ws, addDaysISO(ws, 6)).map(e => e.studentId));
@@ -1987,9 +2003,13 @@
     let html = pageHead('Fehlende mündliche Noten', 'aktuelles Halbjahr · Kurse mit Unterricht in der Woche');
     if (!rows.length) return html + `<p class="empty-line">${icon('check')} Für alle Wochen mit Unterricht sind mündliche Noten eingetragen.</p>`;
     const byW = groupBy(rows, r => r.ws);
+    html += `<p class="muted small">Zeile antippen = Noten eintragen. Haken setzen = für diese Woche keine mündlichen Noten (unten bestätigen).</p>`;
     html += [...byW.entries()].map(([ws, rs]) => `<section class="section"><div class="section-head"><h2>KW ${isoWeek(parseISO(ws))}</h2><span class="muted small">${fmtISO(ws)}–${fmtISO(addDaysISO(ws, 4), true)}</span></div>
-      <div class="mini-list">${rs.map(r => `<button type="button" class="mini-row" data-action="openNotenWeek" data-cid="${r.c.id}" data-ws="${ws}" ${ccStyle(r.c)}><span class="dot"></span><span class="mini-text"><strong>${esc(clsLabel(r.c))}</strong> – ${r.miss} von ${r.total} fehlen</span>${icon('right')}</button>`).join('')}</div></section>`).join('');
-    return html + '<p class="muted small">Kurse ohne mündliche Noten (Kurs → Zahnrad) und Wochen, in denen der Kurs nicht stattgefunden hat, zählen nicht mit.</p>';
+      <div class="mini-list">${rs.map(r => `<div class="fehl-row" ${ccStyle(r.c)}><label class="fehl-check" aria-label="Keine Noten für ${esc(clsLabel(r.c))}, KW ${isoWeek(parseISO(ws))}"><input type="checkbox" data-change="fehlPick" data-key="${r.c.id}|${ws}" ${(S.fehlPick || []).includes(r.c.id + '|' + ws) ? 'checked' : ''}></label>
+        <button type="button" class="mini-row" data-action="openNotenWeek" data-cid="${r.c.id}" data-ws="${ws}" ${ccStyle(r.c)}><span class="dot"></span><span class="mini-text"><strong>${esc(clsLabel(r.c))}</strong> – ${r.miss} von ${r.total} fehlen</span>${icon('right')}</button></div>`).join('')}</div></section>`).join('');
+    const n = (S.fehlPick || []).length;
+    html += `<div class="fehl-bar ${n ? 'on' : ''}"><button type="button" class="btn primary" data-action="fehlSkip" ${n ? '' : 'disabled'}>${n ? `${plural(n, 'Kurswoche', 'Kurswochen')}: keine Noten eintragen …` : 'Haken setzen, um Wochen auszunehmen'}</button></div>`;
+    return html + '<p class="muted small">Kurse ohne mündliche Noten und Wochen, in denen der Kurs nicht stattgefunden hat, zählen nicht mit.</p>';
   }
 
   /* ---------- Diese Woche ---------- */
@@ -4675,6 +4695,11 @@
     },
     classLevel(v) { if (S.courseId) updateClass(S.courseId, { level: v }); },
     classVocab(v, el) { if (S.courseId) updateClass(S.courseId, { vocab: el.checked }); },
+    fehlPick(v, el) {
+      const set = new Set(S.fehlPick || []);
+      if (el.checked) set.add(el.dataset.key); else set.delete(el.dataset.key);
+      S.fehlPick = [...set]; render();
+    },
     myName(v) { commit(d => { d.prefs.profil = { id: 'profil', name: v.trim().slice(0, 30), updatedAt: now() }; }); },
     classNoOral(v, el) { if (S.courseId) updateClass(S.courseId, { noOral: el.checked }); },
     classGradeMode(v) { if (S.courseId) updateClass(S.courseId, { gradeMode: v === 'stunde' ? 'stunde' : 'woche' }); },
@@ -4801,6 +4826,29 @@
     jRange(d) { S.jRange = d.r; render(); },
     jCourse(d) { S.jCourse = d.cid; render(); },
     openNotenWeek(d) { openNoten(d.cid, d.ws); },
+    async fehlSkip() {
+      const keys = (S.fehlPick || []).map(k => k.split('|')).filter(([cid]) => S.data.classes[cid]);
+      if (!keys.length) return;
+      const cids = [...new Set(keys.map(k => k[0]))];
+      const list = keys.map(([cid, ws]) => `<li>${esc(clsLabel(S.data.classes[cid]))} · KW ${isoWeek(parseISO(ws))}</li>`).join('');
+      const v = await openModal({
+        title: 'Keine mündlichen Noten eintragen',
+        body: `<p>Für diese Kurswochen werden keine mündlichen Noten eingetragen. Sie verschwinden aus den fehlenden Noten und aus den Erinnerungen:</p><ul class="fehl-list">${list}</ul>
+          <label class="check"><input type="checkbox" id="m-ganz"><span>Für ${cids.length === 1 ? 'diesen Kurs' : 'diese Kurse'} <strong>überhaupt keine</strong> mündlichen Noten mehr eintragen</span></label>`,
+        actions: [{ label: 'Abbrechen', value: null }, { label: 'Bestätigen', cls: 'primary', run: root => ({ ganz: root.querySelector('#m-ganz').checked }) }]
+      });
+      if (!v) return;
+      commit(d => {
+        for (const cid of cids) {
+          const c = d.classes[cid];
+          const weeks = keys.filter(k => k[0] === cid).map(k => k[1]);
+          d.classes[cid] = Object.assign({}, c, { skipWeeks: [...new Set([...(c.skipWeeks || []), ...weeks])].sort() }, v.ganz ? { noOral: true } : {}, { updatedAt: now() });
+        }
+      });
+      S.fehlPick = [];
+      render();
+      toast(v.ganz ? 'Diese Kurse: keine mündlichen Noten mehr' : 'Ausgenommen – keine Erinnerung mehr für diese Wochen');
+    },
     async notHeld() {
       const c = S.data.classes[S.classId];
       if (!c) return;
@@ -5080,5 +5128,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
 })();

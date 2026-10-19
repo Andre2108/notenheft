@@ -1346,3 +1346,12 @@ html, body { touch-action: manipulation; }
 .neu-grid .start-tile { min-height: 96px; }
 .start-tile.c-neu { --tile: var(--accent); }
 .cal-more a.btn { display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; text-decoration: none; }
+
+/* 6.3: Fehlende Noten mit Haken */
+.fehl-row { display: flex; align-items: stretch; gap: 8px; }
+.fehl-row .mini-row { flex: 1; min-width: 0; }
+.fehl-check { display: flex; align-items: center; padding: 0 4px; }
+.fehl-check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.fehl-bar { position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); z-index: 5; margin: 14px 0; display: flex; justify-content: center; }
+.fehl-bar .btn { width: 100%; max-width: 480px; }
+.fehl-list { margin: 6px 0 12px; padding-left: 20px; }
