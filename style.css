@@ -1339,3 +1339,10 @@ body.swiping main.main { box-shadow: -10px 0 30px rgba(16, 24, 40, .14); backgro
 .aus-pick { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 .t-morning { align-self: end; }
 .modal { transition: transform .2s ease; }
+
+/* 6.1: kein Doppeltipp-Zoom, Kurs-Zurück, Reiter „Eintragen“ */
+html, body { touch-action: manipulation; }
+.course-back { margin: 8px 0 4px; }
+.neu-grid .start-tile { min-height: 96px; }
+.start-tile.c-neu { --tile: var(--accent); }
+.cal-more a.btn { display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; text-decoration: none; }
