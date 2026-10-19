@@ -1355,3 +1355,9 @@ html, body { touch-action: manipulation; }
 .fehl-bar { position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); z-index: 5; margin: 14px 0; display: flex; justify-content: center; }
 .fehl-bar .btn { width: 100%; max-width: 480px; }
 .fehl-list { margin: 6px 0 12px; padding-left: 20px; }
+
+/* 6.4.1: Termine im Wochenraster */
+.pg-day .pg-ev { display: block; width: 100%; margin-top: 3px; padding: 2px 4px; border: 0; border-radius: 6px; font-size: 11px; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--accent-soft); color: var(--accent); }
+.pg-day .pg-ev.pruefung { background: #fde7d3; color: #9a3412; }
+.pg-day .pg-ev.cal { background: var(--card-2); color: var(--muted); }
+.pg-x { white-space: normal; }

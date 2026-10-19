@@ -1,7 +1,7 @@
 /*! Notenheft 6.4 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.4.0';
+  const APP_VERSION = '6.4.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2025,7 +2025,12 @@
     const t = todayISO();
     const days = [0, 1, 2, 3, 4].map(i => toISO(addDays(w0, i)));
     let cells = `<div class="pg-corner"></div>`;
-    days.forEach((d, i) => { cells += `<div class="pg-day ${d === t ? 'today' : ''}" style="grid-column:${i + 2}"><strong>${WD[i]}</strong><span>${parseISO(d).getDate()}.</span></div>`; });
+    days.forEach((d, i) => {
+      // Termine des Tages direkt im Spaltenkopf (eigene Termine und Prüfungen; Ausfälle stehen an der Stunde)
+      const tev = eventsOn(d).filter(e => e.type === 'termin' || e.type === 'pruefung');
+      const cal = calItemsOn(d);
+      cells += `<div class="pg-day ${d === t ? 'today' : ''}" style="grid-column:${i + 2}"><strong>${WD[i]}</strong><span>${parseISO(d).getDate()}.</span>${tev.map(e => `<button type="button" class="pg-ev ${e.type}" data-action="editEvent" data-eid="${e.id}" title="${esc(evTitle(e))}">${esc(evTitle(e))}</button>`).join('')}${cal.length ? `<button type="button" class="pg-ev cal" data-action="dayGo" data-date="${d}" title="${esc(cal.map(x => x.titel).join(', '))}">+${cal.length} Kalender</button>` : ''}</div>`;
+    });
     for (let p = 1; p <= maxP; p++) {
       cells += `<div class="pg-period" style="grid-row:${p + 1}"><strong>${p}</strong><span>${esc(P[p - 1]?.start || '')}</span></div>`;
       for (let i = 0; i < 5; i++) cells += `<div class="pg-cell ${days[i] === t ? 'today' : ''}" style="grid-row:${p + 1};grid-column:${i + 2}"></div>`;
@@ -2039,7 +2044,7 @@
           style="--cc:${esc(clsColor(l.cls))};grid-column:${i + 2};grid-row:${l.from + 1} / ${Math.min(l.to, maxP) + 2}"
           data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}" title="${esc(clsLabel(l.cls))}${l.cancelled ? ' – fällt aus: ' + esc(l.cancelled) : ''}">
           <strong>${esc(l.cls.name)}</strong><span class="pg-subj">${esc(l.cls.subject || '')}</span>${l.room ? `<span class="pg-room">${esc(l.room)}</span>` : ''}
-          ${exam ? `<span class="pg-flag">${icon('exam')}</span>` : l.swapIn ? `<span class="pg-flag swap" title="Tausch: statt ${esc(swapName(l.swapFrom, l.cls))}">${icon('swap')}</span>` : ''}${l.cancelled ? '<span class="pg-x">entfällt</span>' : ''}
+          ${exam ? `<span class="pg-flag">${icon('exam')}</span>` : l.swapIn ? `<span class="pg-flag swap" title="Tausch: statt ${esc(swapName(l.swapFrom, l.cls))}">${icon('swap')}</span>` : ''}${l.cancelled ? `<span class="pg-x">entfällt${l.cancelled !== 'Ausfall' ? ': ' + esc(l.cancelled) : ''}</span>` : ''}
         </button>`;
       }
     });
