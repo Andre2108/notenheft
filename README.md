@@ -12,6 +12,7 @@ Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht
 - **Tendenz** ↑ → ↓: letzte 4 Wochen gegenüber der Zeit davor.
 - **Woche:** deutliche Pfeile „‹ Woche“ / „Nächste ›“.
 - **Kurs-Überblick:** „Ausfälle bis zu den nächsten Ferien“ zeigt nur kommende Ausfälle; vergangene zum Aufklappen.
+- **Ergebnis aus der Korrektur-App einfügen** (Kurs → Arbeiten/Klausuren): In der Korrektur-App „An Notenheft senden“ tippen, im Notenheft einfügen – ohne PC. Seit 5.6.1.
 - **Jahr:** „verbleibend“ steht vorn, neu „Arbeiten offen“ bis Halbjahresende (5/6: 3, Kl. 7: 3 bzw. 2, 8–10 und Oberstufe: 2 pro Halbjahr; je Kurs änderbar). Kalender und „Stunden je Kurs“ monatsweise mit Pfeilen – die Seite ist deutlich kürzer.
 
 ## Neu in Version 5.5 – Klausurnoten kommen automatisch aus dem Klausurmanager

@@ -1,7 +1,7 @@
 /*! Notenheft 5.6 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.6.0';
+  const APP_VERSION = '5.6.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2511,6 +2511,7 @@
         <p class="muted small pad">Klassenarbeiten bzw. Klausuren und mündliche Prüfungen – zählen 50 % der Zeugnisnote. Gewichtung je Arbeit über den Stift in der Arbeit.</p>
         ${exams.length ? `<div class="mini-list">${exams.map(e => `<button type="button" class="mini-row" data-action="assessFromEvent" data-eid="${e.id}" ${ccStyle(c)}><span class="dot"></span><span class="mini-date">${fmtShort(e.date)}</span><span class="mini-text"><strong>${esc(e.kind || 'Prüfung')}</strong> aus der Planung – Noten eintragen</span>${icon('right')}</button>`).join('')}</div>` : ''}
         ${schr.length ? `<div class="as-list">${schr.map(row).join('')}</div>` : ''}
+        ${kmKey() ? `<button type="button" class="btn import-btn" data-action="kmPaste">${icon('copy')} Ergebnis aus der Korrektur-App einfügen</button>` : ''}
         <label class="btn file-btn import-btn">${icon('upload')} Noten aus dem Korrektur-Tool importieren<input type="file" accept=".xlsx" data-change="importKA"></label>
       </section>
       <section class="section"><div class="section-head"><h2>Vokabeltests</h2>${c.vocab ? `<button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button>` : ''}</div>
@@ -2878,15 +2879,32 @@
       }]
     });
   }
-  async function kmImportFile(file) {
-    if (!file) return;
+  async function kmImportText(text) {
     try {
-      const p = kmCheck(await kmDecrypt(JSON.parse(await file.text())));
+      const raw = String(text || '').trim();
+      const p = kmCheck(await kmDecrypt(JSON.parse(raw.slice(raw.indexOf('{')))));
       const r = kmProcess(p);
       persistLocal();
       kmReport(r, p);
-      if (r.pending) render();
-    } catch (e) { toast(e instanceof SyntaxError ? 'Das ist keine Klausurmanager-Datei.' : e.message, { error: true, ms: 6000 }); }
+      render();
+      return true;
+    } catch (e) { toast(e instanceof SyntaxError ? 'Das ist kein Ergebnis aus dem Klausurmanager.' : e.message, { error: true, ms: 6000 }); return false; }
+  }
+  async function kmImportFile(file) { if (file) await kmImportText(await file.text()); }
+  // „An Notenheft senden“ in der Korrektur-App kopiert das verschlüsselte Ergebnis – hier einfügen
+  async function kmPasteDialog() {
+    if (!kmKey()) return toast('Erst unter Mehr → Klausurmanager den Verbindungscode erstellen.', { error: true });
+    const text = await openModal({
+      title: 'Ergebnis aus der Korrektur-App einfügen', autofocus: true,
+      body: `<p class="muted small">In der Korrektur-App „An Notenheft senden“ tippen, dann hier einfügen. Der Text ist verschlüsselt und enthält nur Kürzel, Noten und Fokusschwerpunkte.</p>
+        <button type="button" class="btn small" id="m-clip">${icon('copy')} Aus der Zwischenablage holen</button>
+        <textarea id="m-km" class="code" rows="5" placeholder="{&quot;format&quot;:&quot;notenheft-km&quot; …" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>`,
+      mount: root => root.querySelector('#m-clip').addEventListener('click', async () => {
+        try { root.querySelector('#m-km').value = await navigator.clipboard.readText(); } catch { toast('Bitte lange in das Feld tippen und „Einsetzen“ wählen.', { ms: 5000 }); }
+      }),
+      actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', cls: 'primary', run: root => root.querySelector('#m-km').value.trim() || false }]
+    });
+    if (text) await kmImportText(text);
   }
   function kmPendingPanel(c) {
     const pend = kmPendingList();
@@ -3376,6 +3394,7 @@
         <div class="btnrow">
           <button type="button" class="btn ${kmKey() ? '' : 'primary'}" data-action="kmCode">${icon('key')} Verbindungscode</button>
           ${kmKey() && ghReady() ? `<button type="button" class="btn" data-action="kmFetch">${icon('download')} Jetzt abholen</button>` : ''}
+          ${kmKey() ? `<button type="button" class="btn" data-action="kmPaste">${icon('copy')} Ergebnis einfügen</button>` : ''}
           ${kmKey() ? `<label class="btn file-btn">${icon('upload')} Ergebnisdatei importieren<input type="file" accept=".json,application/json" data-change="importKm"></label>` : ''}
         </div>
       </section>
@@ -4439,6 +4458,7 @@
     exportEntries() { exportEntries(); },
     makeSetupCode() { makeSetupCode(); },
     kmCode() { kmShowCode().catch(e => toast(e.message, { error: true })); },
+    kmPaste() { kmPasteDialog(); },
     async kmFetch() {
       try { await kmInbox({ force: true }); toast(kmPendingList().length ? 'Abgeholt – bitte unter Kurs → Arbeiten/Klausuren zuordnen' : 'Abgeholt'); }
       catch (e) { toast(e.message, { error: true }); }
@@ -4608,5 +4628,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, kmImportText };
 })();
