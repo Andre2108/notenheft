@@ -1,7 +1,7 @@
-/*! Notenheft 6.1 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 6.2 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.1.0';
+  const APP_VERSION = '6.2.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1596,7 +1596,7 @@
     const meta = [course && c ? `<span class="td-c" ${ccStyle(c)}><i></i>${esc(clsLabel(c))}</span>` : '', todoWhen(x)].filter(Boolean).join(' · ');
     return `<div class="todo ${x.done ? 'done' : ''}">
       <button type="button" class="tk" data-action="todoToggle" data-id="${x.id}" aria-label="${x.done ? 'Wieder öffnen' : 'Erledigt'}">${icon('check')}</button>
-      <button type="button" class="td-main" data-action="todoEdit" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b><small>${meta}</small></span></button>
+      <button type="button" class="td-main" data-action="todoEdit" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b>${x.nsFor && x.nsFor.length ? `<small class="td-ns">${esc(x.nsFor.map(sid => S.data.students[sid]?.name).filter(Boolean).join(', '))}</small>` : ''}<small>${meta}</small></span></button>
     </div>`;
   }
   const todoList = (xs, opts, empty = 'Nichts zu erledigen.') => xs.length ? `<div class="glist todo-list">${xs.map(x => todoRow(x, opts)).join('')}</div>` : `<p class="empty-line">${empty}</p>`;
@@ -2714,7 +2714,20 @@
   }
   function setResult(a, sid, patch) {
     const id = a.id + '|' + sid;
-    commit(d => { d.results[id] = Object.assign({ id, assessmentId: a.id, studentId: sid }, patch, { updatedAt: now() }); });
+    commit(d => { d.results[id] = Object.assign({ id, assessmentId: a.id, studentId: sid }, patch, { updatedAt: now() }); nsTodoSync(d, d.assessments[a.id]); });
+  }
+  // Nachschrift-To-do: wer „nicht mitgeschrieben“ hat, steht auf einem To-do „Nachschrift planen“ (zur nächsten Stunde
+  // des Kurses). Haben alle eine Note, ist es erledigt. Ein gelöschtes To-do kommt nicht wieder. Namen nur lokal (nsFor = IDs).
+  function nsTodoSync(d, a) {
+    if (!a || a.deleted || a.type !== 'schriftlich') return;
+    const missing = Object.values(d.results).filter(r => !r.deleted && r.assessmentId === a.id && r.value == null).map(r => r.studentId).sort();
+    const id = 'ns-' + a.id, td = d.todos[id];
+    if (td && td.deleted) return;
+    const same = td && JSON.stringify(td.nsFor || []) === JSON.stringify(missing);
+    if (!missing.length) { if (td && !td.done) d.todos[id] = Object.assign({}, td, { done: true, doneAt: now(), nsFor: [], updatedAt: now() }); return; }
+    if (same) return;
+    d.todos[id] = Object.assign({ id, cat: 'korrektur', classId: a.classId, date: null, createdAt: now() }, td || {},
+      { text: `Nachschrift planen: ${a.title}`.slice(0, 160), nsFor: missing, done: false, doneAt: null, updatedAt: now() });
   }
   async function pickGrade(a, s) {
     const r = resultOf(a.id, s.id);
@@ -2835,6 +2848,7 @@
     commit(d => {
       if (aid === '__new') { aid = uid(); d.assessments[aid] = { id: aid, classId: c.id, type: 'schriftlich', title: res.title, date: res.date, eventId: null, updatedAt: now() }; }
       for (const { it, sid } of res.map) d.results[aid + '|' + sid] = { id: aid + '|' + sid, assessmentId: aid, studentId: sid, value: it.value, label: it.value != null ? it.label : 'nt', updatedAt: now() };
+      nsTodoSync(d, d.assessments[aid]);
     });
     S.assessId = aid; render();
     toast(`${plural(res.map.length, 'Note', 'Noten')} übernommen`);
@@ -3029,6 +3043,7 @@
         n++;
       }
       if (c.kmKurs !== p.kurs && p.kurs) d.classes[c.id] = Object.assign({}, d.classes[c.id], { kmKurs: p.kurs, updatedAt: now() });
+      nsTodoSync(d, d.assessments[aid]);
     });
     return { c, n, missing };
   }
@@ -5052,5 +5067,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, nsTodoSync, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, pushStatus, pushStatusWrite, GH };
 })();

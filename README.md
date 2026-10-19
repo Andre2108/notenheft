@@ -1,6 +1,10 @@
-# Notenheft 6.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.2
+
+- **Nachschrift-To-do:** Wer bei einer Klassenarbeit/Klausur „nicht mitgeschrieben“ hat (aus dem Klausurmanager oder von Hand), steht automatisch auf einem To-do „Nachschrift planen: …“ zur nächsten Stunde des Kurses – mit den Namen (nur auf deinen Geräten). Sobald alle eine Note haben, ist es erledigt. Ein gelöschtes Nachschrift-To-do kommt nicht wieder.
 
 ## Neu in Version 6.1
 
