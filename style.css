@@ -1295,3 +1295,4 @@ body.swiping main.main { box-shadow: -10px 0 30px rgba(16, 24, 40, .14); backgro
 .km-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
 .km-row > div:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .km-row .btnrow { margin: 0; }
+.slim-row .name .fokus { display: block; font-weight: 400; margin-top: 2px; }

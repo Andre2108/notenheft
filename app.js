@@ -1,7 +1,7 @@
 /*! Notenheft 5.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.5.0';
+  const APP_VERSION = '5.5.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2471,7 +2471,7 @@
     return html + `<div class="list">${students.map((s, i) => {
       const r = resultOf(a.id, s.id);
       const txt = !r ? (a.type === 'vokabel' ? '+ Punkte' : '+ Note') : r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${fmtNum(r.points, 1).replace(',0', '')} P. · ${esc(r.label)}` : esc(r.label);
-      return `<div class="row slim-row"><span class="name">${esc(s.name)}</span>
+      return `<div class="row slim-row"><span class="name">${esc(s.name)}${r && r.fokus ? `<small class="muted fokus">Fokus: ${esc(r.fokus)}</small>` : ''}</span>
         <button type="button" class="res-chip big ${!r ? 'empty' : r.value == null ? 'none' : valCls(r.value)}" data-action="${a.type === 'vokabel' ? 'vocabGo' : 'pickGrade'}" data-aid="${a.id}" data-sid="${s.id}" data-i="${i}">${txt}</button></div>`;
     }).join('')}</div>`;
   }
@@ -2546,6 +2546,7 @@
       S.assessId = null;
       commit(d => {
         for (const r of Object.values(d.results)) if (!r.deleted && r.assessmentId === a.id) d.results[r.id] = { id: r.id, deleted: true, updatedAt: now() };
+        if (a.km) for (const o of Object.values(d.obs)) if (!o.deleted && o.km === a.km) d.obs[o.id] = { id: o.id, deleted: true, updatedAt: now() };
         d.assessments[a.id] = { id: a.id, deleted: true, updatedAt: now() };
       });
       return null;
@@ -2671,7 +2672,8 @@
       kurs: String(p.kurs || '').slice(0, 40), fach: String(p.fach || '').slice(0, 40), datum: p.datum,
       stand: Number(p.stand) || now(), nachschrift: !!p.nachschrift,
       ergebnisse: p.ergebnisse.filter(e => e && typeof e.k === 'string' && e.k.trim())
-        .map(e => ({ k: e.k.trim().slice(0, 20), note: e.note == null ? null : String(e.note).trim().slice(0, 4) }))
+        .map(e => Object.assign({ k: e.k.trim().slice(0, 20), note: e.note == null ? null : String(e.note).trim().slice(0, 4) },
+          typeof e.fokus === 'string' && e.fokus.trim() ? { fokus: e.fokus.trim().slice(0, 300) } : {}))
     };
   }
   // „06c“ = „6c“, „Q1-E-LK“ = „Q1 E LK“
@@ -2712,10 +2714,13 @@
         const s = byKm.get(e.k);
         if (!s) continue;
         const id = aid + '|' + s.id, prev = d.results[id];
+        // Fokusschwerpunkt als Beobachtung beim Kind (erscheint auch auf dem Elternsprechtag-Blatt)
+        const oPrev = d.obs[id];
+        if (e.fokus && !(oPrev && (oPrev.updatedAt || 0) >= stand)) d.obs[id] = { id, classId: c.id, studentId: s.id, date: p.datum, text: `Fokus (${p.titel}): ${e.fokus}`, km: p.id, updatedAt: stand };
         if (prev && (prev.updatedAt || 0) >= stand) continue;
         const value = e.note == null ? null : gridValue(e.note);
         if (e.note != null && value == null) continue;
-        d.results[id] = { id, assessmentId: aid, studentId: s.id, value, label: value != null ? gridLabel(value) : 'nt', updatedAt: stand };
+        d.results[id] = Object.assign({ id, assessmentId: aid, studentId: s.id, value, label: value != null ? gridLabel(value) : 'nt', updatedAt: stand }, e.fokus ? { fokus: e.fokus } : {});
         n++;
       }
       if (c.kmKurs !== p.kurs && p.kurs) d.classes[c.id] = Object.assign({}, d.classes[c.id], { kmKurs: p.kurs, updatedAt: now() });

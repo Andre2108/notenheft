@@ -15,6 +15,7 @@ Nach jeder Auswertung im Klausurmanager stehen die Noten von selbst unter **Kurs
 - Eine Note pro Kind und Arbeit. Änderst du im Notenheft später eine Note von Hand, bleibt deine Änderung. Eine erneute Auswertung im Klausurmanager überschreibt ältere Stände.
 - Wer nicht mitgeschrieben hat, steht als „nicht mitgeschrieben“; die Note einer Nachschrift kommt später in dieselbe Arbeit.
 - Eine im Notenheft gelöschte Arbeit kommt nicht zurück.
+- Der **Fokusschwerpunkt** aus dem Erwartungshorizont steht unter der Note und als Beobachtung beim Kind (auch auf dem Elternsprechtag-Blatt). Seit 5.5.1.
 - Notlösung ohne GitHub: Der Klausurmanager legt dieselbe verschlüsselte Datei `…_Notenheft.json` in den Klausurordner. **Mehr → Klausurmanager → Ergebnisdatei importieren.**
 
 **Datenschutz:** Übertragen werden nur Kürzel und Noten, keine Namen. Der Klausurmanager verschlüsselt sie mit einem „offenen Schloss“ (öffentlicher Schlüssel) aus dem Verbindungscode; aufschließen kann nur dein Notenheft (der private Schlüssel liegt in deinen mit dem Passwort verschlüsselten Daten). Die Datei liegt im selben privaten Repo `notenheft-daten` im Ordner `eingang`. Der Verbindungscode enthält weder Passwort noch Token. Wie bei `notenheft.enc.json` bleiben ältere verschlüsselte Stände im Verlauf des Repos – siehe Löschfristen.
