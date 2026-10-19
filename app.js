@@ -1,7 +1,7 @@
 /*! Notenheft 5.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.5.1';
+  const APP_VERSION = '5.5.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2044,7 +2044,7 @@
 
   /* ---------- Noten ---------- */
   function viewNoten() {
-    const tabs = [['erfassen', 'Mündlich'], ['leistungen', 'Tests'], ['uebersicht', 'Übersicht'], ['zeugnis', 'Zeugnis']];
+    const tabs = [['erfassen', 'Mündlich'], ['leistungen', 'Arbeiten/Klausuren'], ['uebersicht', 'Übersicht'], ['zeugnis', 'Zeugnis']];
     const seg = `<div class="seg full noten-seg">${tabs.map(([k, l]) => `<button type="button" data-action="notenTab" data-tab="${k}" class="${S.notenTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     const body = S.notenTab === 'uebersicht' ? viewUebersicht() : S.notenTab === 'leistungen' ? viewLeistungen() : S.notenTab === 'zeugnis' ? viewZeugnis() : viewErfassen();
     return pageHead('Noten') + seg + body;
@@ -2281,7 +2281,7 @@
     const weeks = [...groupBy(ents, e => weekKey(e.date)).entries()].sort((a, b) => b[0].localeCompare(a[0]));
     const obs = live(S.data.obs).filter(o => o.studentId === sid).sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt - a.updatedAt));
     const results = assessmentsOf(c.id).map(a => ({ a, r: resultOf(a.id, sid) })).filter(x => x.r);
-    return `<div class="subhead"><button type="button" class="btn ghost" data-action="closeDetail">${icon('left')} ${S.detailFrom === 'zeugnis' ? 'Zeugnis' : S.detailFrom === 'leistungen' ? 'Tests' : S.detailFrom === 'erfassen' ? 'Mündlich' : 'Übersicht'}</button></div>
+    return `<div class="subhead"><button type="button" class="btn ghost" data-action="closeDetail">${icon('left')} ${S.detailFrom === 'zeugnis' ? 'Zeugnis' : S.detailFrom === 'leistungen' ? 'Arbeiten/Klausuren' : S.detailFrom === 'erfassen' ? 'Mündlich' : 'Übersicht'}</button></div>
       <section class="panel detail-head" ${ccStyle(c)}>
         <div class="dh-top"><div><h2 class="detail-name">${esc(s.name)}</h2><p class="muted small">${esc(clsLabel(c))} · ${levelLabel(c)} · Schuljahr ${tc.sy}/${String(tc.sy + 1).slice(2)}</p></div>
           <button type="button" class="btn small" data-action="printSheet" data-sid="${sid}">${icon('print')} Elternsprechtag</button></div>
@@ -2457,7 +2457,7 @@
     const done = students.filter(s => resultOf(a.id, s.id)).length;
     const vals = students.map(s => resultOf(a.id, s.id)).filter(r => r && r.value != null).map(r => r.value);
     const spiegel = [1, 2, 3, 4, 5, 6].map(n => vals.filter(v => Math.round(v + 1e-9) === n || (n === 1 && v < 1)).length);
-    let html = `<div class="subhead"><button type="button" class="btn ghost" data-action="closeAssess">${icon('left')} Tests &amp; Arbeiten</button></div>
+    let html = `<div class="subhead"><button type="button" class="btn ghost" data-action="closeAssess">${icon('left')} Arbeiten/Klausuren</button></div>
       <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest, max. 10 Punkte' : 'schriftliche Leistung'}</p>
         <div class="spiegel">${spiegel.map((n, i) => `<span class="g${i + 1}"><b>${i + 1}</b>${n}</span>`).join('')}<span class="sp-avg">Ø ${vals.length ? fmtNum(mean(vals), 2) : '–'}</span></div></div>
         <button type="button" class="icon-btn plain" data-action="editAssess" data-aid="${a.id}" aria-label="Bearbeiten">${icon('pencil')}</button></section>
@@ -2737,7 +2737,7 @@
     return kmApply(p, c);
   }
   function kmReport(r, p) {
-    if (r.pending) return toast(`Neue Noten „${p.titel}“ (${p.kurs}) – bitte unter Kurs → Tests einem Kurs zuordnen.`, { ms: 7000 });
+    if (r.pending) return toast(`Neue Noten „${p.titel}“ (${p.kurs}) – bitte unter Kurs → Arbeiten/Klausuren einem Kurs zuordnen.`, { ms: 7000 });
     if (r.skipped) return;
     toast(`Klausurmanager: „${p.titel}“ – ${plural(r.n, 'Note', 'Noten')} in ${clsLabel(r.c)}${r.missing.length ? ` · ${plural(r.missing.length, 'Kürzel', 'Kürzel')} ohne Kind (Kürzel-Tabelle einlesen)` : ''}`, { ms: 6000 });
   }
@@ -2782,7 +2782,7 @@
     const code = 'KM1.' + b64url(utf8(JSON.stringify({ v: 1, owner: g.owner, repo: g.repo, pub: k.pub })));
     await openModal({
       title: 'Verbindungscode für den Klausurmanager',
-      body: `<p>Diesen Code einmal am PC an den Klausurmanager geben. Danach kommen die Noten jeder ausgewerteten Klausur automatisch unter <strong>Kurs → Tests</strong> an.</p>
+      body: `<p>Diesen Code einmal am PC an den Klausurmanager geben. Danach kommen die Noten jeder ausgewerteten Klausur automatisch unter <strong>Kurs → Arbeiten/Klausuren</strong> an.</p>
         <p class="muted small">Der Code ist kein Geheimnis: Er enthält nur deinen GitHub-Namen, den Namen des privaten Daten-Repos und ein „offenes Schloss“ (öffentlicher Schlüssel). Damit kann der Klausurmanager Noten nur verschlüsseln, nicht lesen. Dein Passwort und dein Token sind nicht enthalten.</p>
         <textarea class="code" readonly rows="5">${code}</textarea>`,
       actions: [{ label: 'Schließen', value: null }, {
@@ -3045,7 +3045,7 @@
   }
 
   /* ---------- Kurse (Registerkarten) ---------- */
-  const CTABS = [['ueberblick', 'Überblick', 'chart'], ['muendlich', 'Mündlich', 'edit'], ['tests', 'Tests', 'exam'], ['uebersicht', 'Noten', 'list'], ['zeugnis', 'Zeugnis', 'award'], ['bearbeiten', 'Kurs bearbeiten', 'gear']];
+  const CTABS = [['ueberblick', 'Überblick', 'chart'], ['muendlich', 'Mündlich', 'edit'], ['tests', 'Arbeiten/Klausuren', 'exam'], ['uebersicht', 'Noten', 'list'], ['zeugnis', 'Zeugnis', 'award'], ['bearbeiten', 'Kurs bearbeiten', 'gear']];
   function courseRegister(activeId) {
     const cs = classesSorted();
     return `<div class="course-tabs-row reg">
@@ -3281,8 +3281,8 @@
 
       <section class="panel">
         <h2>${icon('exam')} Klausurmanager</h2>
-        <p class="muted small">Die Noten jeder im Klausurmanager ausgewerteten Klausur kommen automatisch unter <strong>Kurs → Tests</strong> an. Übertragen werden nur Kürzel und Noten – verschlüsselt, lesbar nur für dein Notenheft.</p>
-        ${kmKey() ? `<p class="ok-t small">Verbindungscode erstellt am ${fmtDate(new Date(kmKey().createdAt), true)}.${kmPendingList().length ? ` ${plural(kmPendingList().length, 'Ergebnis wartet', 'Ergebnisse warten')} auf Zuordnung (Kurs → Tests).` : ''}</p>` : '<p class="muted small">Noch nicht verbunden: „Verbindungscode“ antippen und den Code einmal am PC an den Klausurmanager geben.</p>'}
+        <p class="muted small">Die Noten jeder im Klausurmanager ausgewerteten Klausur kommen automatisch unter <strong>Kurs → Arbeiten/Klausuren</strong> an. Übertragen werden nur Kürzel und Noten – verschlüsselt, lesbar nur für dein Notenheft.</p>
+        ${kmKey() ? `<p class="ok-t small">Verbindungscode erstellt am ${fmtDate(new Date(kmKey().createdAt), true)}.${kmPendingList().length ? ` ${plural(kmPendingList().length, 'Ergebnis wartet', 'Ergebnisse warten')} auf Zuordnung (Kurs → Arbeiten/Klausuren).` : ''}</p>` : '<p class="muted small">Noch nicht verbunden: „Verbindungscode“ antippen und den Code einmal am PC an den Klausurmanager geben.</p>'}
         <div class="btnrow">
           <button type="button" class="btn ${kmKey() ? '' : 'primary'}" data-action="kmCode">${icon('key')} Verbindungscode</button>
           ${kmKey() && ghReady() ? `<button type="button" class="btn" data-action="kmFetch">${icon('download')} Jetzt abholen</button>` : ''}
@@ -4347,7 +4347,7 @@
     makeSetupCode() { makeSetupCode(); },
     kmCode() { kmShowCode().catch(e => toast(e.message, { error: true })); },
     async kmFetch() {
-      try { await kmInbox({ force: true }); toast(kmPendingList().length ? 'Abgeholt – bitte unter Kurs → Tests zuordnen' : 'Abgeholt'); }
+      try { await kmInbox({ force: true }); toast(kmPendingList().length ? 'Abgeholt – bitte unter Kurs → Arbeiten/Klausuren zuordnen' : 'Abgeholt'); }
       catch (e) { toast(e.message, { error: true }); }
     },
     kmAssign(d) {

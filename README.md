@@ -4,13 +4,13 @@ Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht
 
 ## Neu in Version 5.5 – Klausurnoten kommen automatisch aus dem Klausurmanager
 
-Nach jeder Auswertung im Klausurmanager stehen die Noten von selbst unter **Kurs → Tests** – ohne Abtippen.
+Nach jeder Auswertung im Klausurmanager stehen die Noten von selbst unter **Kurs → Arbeiten/Klausuren** – ohne Abtippen.
 
 **Einrichten (einmalig):**
 1. **Mehr → Klausurmanager → Verbindungscode** antippen, **Kopieren** und den Code am PC an den Klausurmanager geben (`python3 skripte\notenheft_senden.py verbinden KM1.…` oder einfach Claude geben). Die Synchronisierung über GitHub muss dafür eingerichtet sein.
 2. Pro Kurs einmal: **Kurs → Zahnrad → Kinder → „Aus Kürzel-Tabelle übernehmen“** und die `Kürzel-Tabelle_<Schuljahr>.xlsx` wählen. Das passende Tabellenblatt ist vorgewählt. Vorhandene Kinder (und ihre Noten) bleiben, sie bekommen nur ihr Kürzel; fehlende Kinder werden als „Vorname N.“ angelegt. Gelesen werden nur Vorname, Nachname und „Kürzel (final)“.
 
-**Danach:** Klausur wie gewohnt im Klausurmanager auswerten – beim nächsten Öffnen des Notenhefts sind die Noten da (Meldung unten). Lässt sich der Kurs nicht eindeutig erkennen, erscheint unter Kurs → Tests „Neue Noten aus dem Klausurmanager“ mit einem Knopf zum Zuordnen.
+**Danach:** Klausur wie gewohnt im Klausurmanager auswerten – beim nächsten Öffnen des Notenhefts sind die Noten da (Meldung unten). Lässt sich der Kurs nicht eindeutig erkennen, erscheint unter Kurs → Arbeiten/Klausuren „Neue Noten aus dem Klausurmanager“ mit einem Knopf zum Zuordnen.
 
 - Eine Note pro Kind und Arbeit. Änderst du im Notenheft später eine Note von Hand, bleibt deine Änderung. Eine erneute Auswertung im Klausurmanager überschreibt ältere Stände.
 - Wer nicht mitgeschrieben hat, steht als „nicht mitgeschrieben“; die Note einer Nachschrift kommt später in dieselbe Arbeit.
