@@ -1,6 +1,18 @@
-# Notenheft 5.5 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 5.6 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 5.6
+
+- **Mündliche Noten einmal pro Woche:** Pro Kind eine Wochennote, erneutes Antippen ersetzt sie. Wer lieber einzelne Stunden benotet: Kurs → Zahnrad → „Mündliche Noten: für einzelne Unterrichtsstunden“.
+- **Start:** Oben ein Kasten „Heute“ mit den Terminen des Tages und dem Countdown „Schultage bis zu den nächsten Ferien“.
+- **Mündliche Prüfung** unter Kurs → Arbeiten/Klausuren („+ Mündliche Prüfung“); zählt zum schriftlichen Teil.
+- **Gewichtung je Arbeit** (×0,5 bis ×3) über den Stift in der Arbeit; die Zeugnisrechnung zeigt „Schriftlich Ø (gewichtet)“.
+- **Schüleransicht:** zwei Kurven – mündlich (Wochenschnitt) und schriftlich inkl. mündlicher Prüfung.
+- **Tendenz** ↑ → ↓: letzte 4 Wochen gegenüber der Zeit davor.
+- **Woche:** deutliche Pfeile „‹ Woche“ / „Nächste ›“.
+- **Kurs-Überblick:** „Ausfälle bis zu den nächsten Ferien“ zeigt nur kommende Ausfälle; vergangene zum Aufklappen.
+- **Jahr:** „verbleibend“ steht vorn, neu „Arbeiten offen“ bis Halbjahresende (5/6: 3, Kl. 7: 3 bzw. 2, 8–10 und Oberstufe: 2 pro Halbjahr; je Kurs änderbar). Kalender und „Stunden je Kurs“ monatsweise mit Pfeilen – die Seite ist deutlich kürzer.
 
 ## Neu in Version 5.5 – Klausurnoten kommen automatisch aus dem Klausurmanager
 

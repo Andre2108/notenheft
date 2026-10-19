@@ -1,7 +1,7 @@
-/*! Notenheft 5.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
+/*! Notenheft 5.6 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '5.5.2';
+  const APP_VERSION = '5.6.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -491,9 +491,12 @@
     const weekAvgs = [...byWeek.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([week, es]) => ({ week, avg: mean(es.map(e => e.grade)), n: es.length }));
     const avg = !graded.length ? null
       : S.data.settings.weighting === 'woche' ? mean(weekAvgs.map(w => w.avg)) : mean(graded.map(e => e.grade));
+    // Tendenz: Schnitt der letzten 4 Wochen gegenüber allen Wochen davor
     let trend = null;
-    if (weekAvgs.length >= 5) {
-      const diff = mean(weekAvgs.slice(-3).map(w => w.avg)) - mean(weekAvgs.slice(0, -3).map(w => w.avg));
+    const cut = addDaysISO(toISO(mondayOf(new Date())), -21);
+    const recent = weekAvgs.filter(w => w.week >= cut), before = weekAvgs.filter(w => w.week < cut);
+    if (recent.length && before.length) {
+      const diff = mean(recent.map(w => w.avg)) - mean(before.map(w => w.avg));
       trend = diff <= -0.3 ? 'up' : diff >= 0.3 ? 'down' : 'flat';
     }
     return {
@@ -564,6 +567,9 @@
     .filter(a => a.classId === cid && (!type || a.type === type) && (!from || a.date >= from) && (!to || a.date <= to))
     .sort((a, b) => a.date.localeCompare(b.date) || collator.compare(a.title, b.title));
 
+  // Gewichtung einer Arbeit (Standard 1); mündliche Prüfungen zählen zum schriftlichen Teil
+  const weightOf = a => (a && a.weight > 0 ? a.weight : 1);
+  const artLabel = a => a.type === 'vokabel' ? 'Vokabeltest' : a.art === 'muendlich' ? 'Mündliche Prüfung' : 'schriftlich';
   function calcRaw(s, c, from, to) {
     const inR = d => d >= from && d <= to;
     const ment = liveEntries().filter(e => e.studentId === s.id && e.kind === 'note' && e.grade && inR(e.date));
@@ -574,10 +580,11 @@
     for (const a of assessmentsOf(c.id, null, from, to)) {
       const r = resultOf(a.id, s.id);
       if (!r || r.value == null) continue;
-      (a.type === 'vokabel' ? vok : schr).push(r.value);
+      if (a.type === 'vokabel') vok.push(r.value); else schr.push([r.value, weightOf(a)]);
     }
     const somiItems = mUnits.concat(vok);
-    return { mCount: mUnits.length, mAvg: mean(mUnits), vCount: vok.length, vAvg: mean(vok), somi: mean(somiItems), schr: mean(schr), sCount: schr.length };
+    const wSum = sum(schr.map(x => x[1]));
+    return { mCount: mUnits.length, mAvg: mean(mUnits), vCount: vok.length, vAvg: mean(vok), somi: mean(somiItems), schr: wSum ? sum(schr.map(x => x[0] * x[1])) / wSum : null, sCount: schr.length, weighted: schr.some(x => x[1] !== 1) };
   }
   function calc(s, term, c) {
     c = c || S.data.classes[s.classId];
@@ -1658,6 +1665,7 @@
     const greet = hr < 11 ? 'Guten Morgen' : hr < 17 ? 'Hallo' : 'Guten Abend';
     const free = freeReason(t);
     let html = `<div class="start-head"><h1>${greet}!</h1><p>${fmtLong(t)} · KW ${isoWeek(parseISO(t))}${free ? ' · ' + esc(free) : ''}</p></div>`;
+    html += todayBanner(t);
     const cs = classesSorted();
     if (!cs.length) return html + noCourses();
     const ls = lessonsOn(t).filter(l => !l.away && !l.cancelled);
@@ -1703,6 +1711,25 @@
     html += `<h3 class="start-sub">Neu eintragen</h3><div class="start-add">${add.map(([a, type, ic, title]) =>
       `<button type="button" data-action="${a}" ${type ? `data-type="${type}"` : ''}>${icon(ic)}<span>${title}</span></button>`).join('')}</div>`;
     return html;
+  }
+  // Schultage (Mo–Fr ohne Feiertage/Ferien) ab heute bis vor die nächsten Ferien
+  function holidayCountdown(t) {
+    const cur = holidayOn(t);
+    if (cur) return { now: cur };
+    const next = live(S.data.holidays).filter(h => h.from > t).sort((a, b) => a.from.localeCompare(b.from))[0];
+    if (!next) return null;
+    let n = 0;
+    for (let d = t; d < next.from; d = addDaysISO(d, 1)) if (!freeReason(d)) n++;
+    return { next, n };
+  }
+  function todayBanner(t) {
+    const items = [];
+    for (const e of eventsOn(t)) items.push(`<li>${picto(e.type === 'pruefung' ? 'pruefung' : e.type === 'ausfall' ? 'ausfall' : 'termin', 'sm')}<span><b>${esc(evTitle(e))}</b>${e.classId ? ` · ${esc(clsLabel(S.data.classes[e.classId]))}` : ''}${e.time ? ` · ${esc(e.time)} Uhr` : ''}</span></li>`);
+    for (const x of todosHeute(t).filter(x => todoDue(x) <= t)) items.push(`<li>${picto('todo', 'sm')}<span><b>${esc(x.text || x.title || 'To-do')}</b> · To-do</span></li>`);
+    const hc = holidayCountdown(t);
+    const cd = !hc ? '' : hc.now ? `<div class="tb-count"><b>${esc(hc.now.name)}</b><span>bis ${fmtISO(hc.now.to, true)}</span></div>`
+      : `<div class="tb-count"><b>${hc.n}</b><span>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</span></div>`;
+    return `<section class="today-banner"><div class="tb-main"><h2>Heute</h2>${items.length ? `<ul>${items.join('')}</ul>` : '<p class="muted small">Keine Termine heute.</p>'}</div>${cd}</section>`;
   }
   async function pickCourse(title, list, todayFirst = true) {
     const t = todayISO();
@@ -1879,9 +1906,9 @@
     const t = todayISO();
     const isThisWeek = ws === toISO(mondayOf(new Date()));
     const nav = `<div class="day-nav">
-        <button type="button" class="icon-btn" data-action="planPrev" aria-label="Vorherige Woche">${icon('left')}</button>
+        <button type="button" class="btn small week-arrow" data-action="planPrev" aria-label="Vorherige Woche">${icon('left')} Woche</button>
         ${isThisWeek ? '' : '<button type="button" class="btn small" data-action="planToday">Heute</button>'}
-        <button type="button" class="icon-btn" data-action="planNext" aria-label="Nächste Woche">${icon('right')}</button>
+        <button type="button" class="btn small week-arrow" data-action="planNext" aria-label="Nächste Woche">Nächste ${icon('right')}</button>
       </div>`;
     let html = pageHead(isThisWeek ? 'Diese Woche' : `KW ${isoWeek(w0)}`, `KW ${isoWeek(w0)} · ${fmtDate(w0)}–${fmtDate(addDays(w0, 4), true)}`, nav);
     const cs = classesSorted();
@@ -1975,9 +2002,9 @@
   function yearCalendar() {
     const tc = termCfg(), t = todayISO();
     const evs = groupBy(live(S.data.events), e => e.date);
-    const months = [];
-    for (let d = parseISO(tc.start); toISO(d) <= tc.end; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(new Date(d));
-    return `<div class="ycal">${months.map(m => {
+    const nav = monthNav('jMonth', schoolMonths());
+    const months = [nav.m];
+    return nav.html + `<div class="ycal one">${months.map(m => {
       const first = new Date(m.getFullYear(), m.getMonth(), 1);
       const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
       const lead = (first.getDay() + 6) % 7;
@@ -1995,6 +2022,40 @@
     }).join('')}</div>
     <div class="yc-legend"><span><i class="lg-fer"></i>Ferien</span><span><i class="lg-fei"></i>Feiertag</span><span><i class="lg-ex"></i>Prüfung</span><span><i class="lg-au"></i>Ausfall</span><span><i class="lg-te"></i>Termin</span><span><i class="lg-today"></i>heute</span></div>`;
   }
+  // Klassenarbeiten/Klausuren pro Halbjahr: 5/6 je 3, 7: 3 + 2, 8–10 je 2, Oberstufe je 2 (je Kurs überschreibbar)
+  function examsRequired(c, hj) {
+    if (c.examsPerHj) return c.examsPerHj;
+    if (isSII(c)) return 2;
+    const m = String(c.name || '').match(/\d+/);
+    const g = m ? +m[0] : 0;
+    if (g === 5 || g === 6) return 3;
+    if (g === 7) return hj === 'HJ1' ? 3 : 2;
+    return 2;
+  }
+  function examsLeft(c) { // bis zum Halbjahresende: geschrieben / geplant / noch offen
+    const tc = termCfg(), t = todayISO();
+    const hj = t <= tc.hj1End ? 'HJ1' : 'HJ2';
+    const from = hj === 'HJ1' ? tc.start : addDaysISO(tc.hj1End, 1), to = hj === 'HJ1' ? tc.hj1End : tc.end;
+    const done = assessmentsOf(c.id, 'schriftlich', from, to);
+    const evs = live(S.data.events).filter(e => e.type === 'pruefung' && e.classId === c.id && e.date >= from && e.date <= to && !/vokabel/i.test(e.kind || ''));
+    const written = done.length + evs.filter(e => e.date <= t && !done.some(a => Math.abs(diffDays(a.date, e.date)) <= 7)).length;
+    const planned = evs.filter(e => e.date > t).length;
+    const need = examsRequired(c, hj);
+    return { need, written, planned, open: Math.max(0, need - written), unplanned: Math.max(0, need - written - planned), hj };
+  }
+  function monthNav(key, months) { // ‹ Monat › – blättert durch die Monate des Schuljahres
+    const cur = Math.min(months.length - 1, Math.max(0, S[key] ?? months.findIndex(m => toISO(m).slice(0, 7) === todayISO().slice(0, 7))));
+    S[key] = cur < 0 ? 0 : cur;
+    const m = months[S[key]];
+    return { m, html: `<div class="month-nav"><button type="button" class="icon-btn" data-action="monthStep" data-k="${key}" data-d="-1" ${S[key] === 0 ? 'disabled' : ''} aria-label="Vorheriger Monat">${icon('left')}</button>
+      <strong>${MONTHS[m.getMonth()]} ${m.getFullYear()}</strong>
+      <button type="button" class="icon-btn" data-action="monthStep" data-k="${key}" data-d="1" ${S[key] === months.length - 1 ? 'disabled' : ''} aria-label="Nächster Monat">${icon('right')}</button></div>` };
+  }
+  function schoolMonths() {
+    const tc = termCfg(), out = [];
+    for (let d = parseISO(tc.start); toISO(d) <= tc.end; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) out.push(new Date(d));
+    return out;
+  }
   function viewJahr() {
     const tc = termCfg();
     let html = pageHead('Ganzjahresplanung', `Schuljahr ${tc.sy}/${String(tc.sy + 1).slice(2)}`,
@@ -2008,25 +2069,31 @@
     const tot = { soll: sum(rows.map(r => r.s.soll)), aus: sum(rows.map(r => r.s.aus)), geh: sum(rows.map(r => r.s.geh)), rest: sum(rows.map(r => r.s.rest)), termine: sum(rows.map(r => r.s.termine)), wh: sum(cs.map(weeklyHours)) };
     const bar = s => { const p = x => s.soll ? (x / s.soll * 100).toFixed(1) : 0; return `<div class="stack-bar thin"><i class="ok" style="width:${p(s.geh)}%"></i><i class="warn" style="width:${p(s.aus)}%"></i><i class="rest" style="width:${p(s.rest)}%"></i></div>`; };
     html += `<section class="section"><div class="section-head"><h2>${picto('lesson', 'sm')} Stundenbilanz · ${esc(label)}</h2><span class="muted small">${fmtISO(from)}–${fmtISO(to, true)}</span></div>
-      <div class="table-wrap"><table class="ov jt"><thead><tr><th>Kurs</th><th class="num">Std./Wo.</th><th class="num">Termine</th><th class="num">laut Plan</th><th class="num">ausgefallen</th><th class="num">gehalten</th><th class="num">verbleibend</th></tr></thead>
-      <tbody>${rows.map(({ c, s }) => `<tr data-action="jCourse" data-cid="${c.id}" tabindex="0" ${ccStyle(c)}><td><span class="cls-chip" ${ccStyle(c)}><i></i>${esc(c.name)} ${esc(c.subject || '')}</span>${bar(s)}</td><td class="num">${weeklyHours(c)}</td><td class="num">${s.termine}</td><td class="num">${s.soll}</td><td class="num warn-t">${s.aus || ''}</td><td class="num ok-t">${s.geh}</td><td class="num"><b>${s.rest}</b></td></tr>`).join('')}</tbody>
-      <tfoot><tr><td>Gesamt</td><td class="num">${tot.wh}</td><td class="num">${tot.termine}</td><td class="num">${tot.soll}</td><td class="num">${tot.aus}</td><td class="num">${tot.geh}</td><td class="num">${tot.rest}</td></tr></tfoot></table></div>
+      <div class="table-wrap"><table class="ov jt"><thead><tr><th>Kurs</th><th class="num">verbleibend</th><th class="num" title="Klassenarbeiten/Klausuren bis zum Halbjahresende">Arbeiten offen</th><th class="num">gehalten</th><th class="num">ausgefallen</th><th class="num">laut Plan</th><th class="num">Std./Wo.</th></tr></thead>
+      <tbody>${rows.map(({ c, s }) => { const ex = examsLeft(c); return `<tr data-action="jCourse" data-cid="${c.id}" tabindex="0" ${ccStyle(c)}><td><span class="cls-chip" ${ccStyle(c)}><i></i>${esc(c.name)} ${esc(c.subject || '')}</span>${bar(s)}</td><td class="num"><b>${s.rest}</b></td><td class="num" title="${ex.written} von ${ex.need} geschrieben, ${ex.planned} geplant">${ex.open ? `<b>${ex.open}</b>${ex.unplanned ? ` <small class="warn-t">(${ex.unplanned} ohne Termin)</small>` : ''}` : '<span class="ok-t">✓</span>'}</td><td class="num ok-t">${s.geh}</td><td class="num warn-t">${s.aus || ''}</td><td class="num">${s.soll}</td><td class="num">${weeklyHours(c)}</td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><td>Gesamt</td><td class="num">${tot.rest}</td><td class="num">${sum(cs.map(c => examsLeft(c).open))}</td><td class="num">${tot.geh}</td><td class="num">${tot.aus}</td><td class="num">${tot.soll}</td><td class="num">${tot.wh}</td></tr></tfoot></table></div>
+      <p class="muted small">„Arbeiten offen“: noch zu schreiben bis Ende des ${termCfg().hj1End >= todayISO() ? '1.' : '2.'} Halbjahres (5/6: 3, Kl. 7: 3 bzw. 2, 8–10 und Oberstufe: 2 pro Halbjahr; je Kurs änderbar).</p>
       <div class="yc-legend"><span><i class="lg-ok"></i>gehalten</span><span><i class="lg-au2"></i>ausgefallen</span><span><i class="lg-rest"></i>verbleibend</span></div></section>`;
-    html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Jahresübersicht</h2><span class="muted small">Tag antippen für Details</span></div>${yearCalendar()}</section>`;
+    html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Kalender</h2><span class="muted small">Tag antippen für Details</span></div>${yearCalendar()}</section>`;
     const jc = S.data.classes[S.jCourse] && !S.data.classes[S.jCourse].deleted ? S.data.classes[S.jCourse] : cs[0];
-    const st = rangeStats(jc.id, from, to);
+    const st = rangeStats(jc.id, tc.start, tc.end);
+    const lm = monthNav('jlMonth', schoolMonths());
+    const mk = toISO(lm.m).slice(0, 7);
     let n = 0;
+    const nums = new Map(st.ls.map(l => { if (!l.cancelled) n += l.hours; return [l, n]; }));
+    const mls = st.ls.filter(l => l.date.slice(0, 7) === mk);
     html += `<section class="section"><div class="section-head"><h2>${picto('lesson', 'sm')} Stunden je Kurs</h2></div>
       <div class="course-tabs-row">${cs.map(c => `<button type="button" class="ctab ${c.id === jc.id ? 'on' : ''}" ${ccStyle(c)} data-action="jCourse" data-cid="${c.id}"><i></i>${esc(c.name)} ${esc(c.subject || '')}</button>`).join('')}</div>
-      <div class="lesson-table">${st.ls.map(l => {
+      ${lm.html}
+      <div class="lesson-table">${mls.map(l => {
         const started = lessonStarted(l);
         const exam = eventsOn(l.date).find(e => e.type === 'pruefung' && e.classId === jc.id);
-        if (!l.cancelled) n += l.hours;
+        const n = nums.get(l);
         const status = l.away ? `<span class="lt-st x">${icon('swap')}getauscht</span>` : l.cancelled ? `<span class="lt-st x">${icon('ban')}ausgefallen</span>` : started ? `<span class="lt-st ok">${icon('check')}gehalten</span>` : `<span class="lt-st next">${icon('clock')}kommend</span>`;
         return `<button type="button" class="lt-row ${l.cancelled ? 'cancelled' : ''} ${l.date === todayISO() ? 'today' : ''}" ${ccStyle(jc)} data-action="lessonSheet" data-cid="${jc.id}" data-date="${l.date}" data-from="${l.from}">
           <span class="lt-n">${l.cancelled ? '–' : n}</span><span class="lt-d"><b>${WD[wdOf(l.date)]}</b> ${fmtISO(l.date)}</span><span class="lt-p">${pLabel(l.from, l.to)}</span>
           <span class="lt-note">${exam ? `${icon('exam')} ${esc(exam.kind || 'Prüfung')}` : l.cancelled ? esc(l.cancelled) : l.swapIn ? `Tausch (statt ${esc(swapName(l.swapFrom, l.cls))})` : ''}</span>${status}</button>`;
-      }).join('') || '<p class="muted small pad">Keine Stunden in diesem Zeitraum.</p>'}</div></section>`;
+      }).join('') || '<p class="muted small pad">Keine Stunden in diesem Monat.</p>'}</div></section>`;
     return html;
   }
   async function dayInfo(iso) {
@@ -2050,7 +2117,18 @@
     return pageHead('Noten') + seg + body;
   }
   function weekRange() { return [S.weekStart, addDaysISO(S.weekStart, 6)]; }
-  function currentDay() {
+  // Mündliche Noten: Standard eine Note pro Kind und Woche; je Kurs auf Einzelstunden umschaltbar
+  const weeklyMode = c => !!c && c.gradeMode !== 'stunde';
+  function weekGradeDay(cid) { // Datum der Wochennote: letzter Unterrichtstag der Woche, sonst Freitag
+    const ds = lessonsBetween(cid, S.weekStart, addDaysISO(S.weekStart, 4)).filter(l => !l.cancelled && !l.away).map(l => l.date).sort();
+    return ds.length ? ds[ds.length - 1] : addDaysISO(S.weekStart, 4);
+  }
+  function currentDay(sid, cid) {
+    const c = S.data.classes[cid || (sid && S.data.students[sid]?.classId) || S.classId];
+    if (weeklyMode(c)) {
+      if (sid) { const ex = entriesOf(c.id, ...weekRange()).filter(e => e.studentId === sid).sort(byDate).pop(); if (ex) return ex.date; }
+      return weekGradeDay(c.id);
+    }
     const days = [0, 1, 2, 3, 4].map(i => addDaysISO(S.weekStart, i));
     if (S.day && days.includes(S.day)) return S.day;
     const today = todayISO();
@@ -2083,9 +2161,9 @@
         ${isThisWeek ? '' : '<button type="button" class="btn small" data-action="weekToday">Heute</button>'}
         <button type="button" class="icon-btn" data-action="weekNext" aria-label="Nächste Woche">${icon('right')}</button>
       </div>
-      <div class="days" role="group" aria-label="Datum für neue Einträge">
+      ${weeklyMode(cls) ? `<p class="muted small week-mode-info">Eine Note pro Kind für KW ${isoWeek(ws)} – erneutes Antippen ersetzt sie. Einzelstunden: Kurs → Zahnrad → „Mündliche Noten“.</p>` : `<div class="days" role="group" aria-label="Datum für neue Einträge">
         ${[0, 1, 2, 3, 4].map(i => { const d = addDays(ws, i); const iso = toISO(d); return `<button type="button" data-action="setDay" data-day="${iso}" class="${iso === day ? 'on' : ''} ${lessonDays.has(iso) ? 'has-lesson' : ''}" ${ccStyle(cls)} title="${lessonDays.has(iso) ? 'Unterricht an diesem Tag' : ''}">${WD[i]} <small>${d.getDate()}.</small></button>`; }).join('')}
-      </div>
+      </div>`}
       <div class="progress-line">
         <div class="bar" ${ccStyle(cls)}><div style="width:${students.length ? Math.round(done / students.length * 100) : 0}%"></div></div>
         <span>${done}/${students.length} mit Eintrag</span>
@@ -2109,7 +2187,7 @@
       const es = byS.get(s.id) || [];
       const g = es.filter(e => e.kind === 'note');
       const avg = g.length > 1 ? mean(g.map(e => e.grade)) : null;
-      const cur = es.find(e => e.date === currentDay());
+      const cur = es.find(e => e.date === currentDay(s.id));
       return `<div class="row ${cur ? 'has-today' : ''}" id="st-${s.id}">
         <div class="row-head">
           <span class="name">${esc(s.name)}</span>
@@ -2155,8 +2233,8 @@
       <div class="card-name">${esc(s.name)}</div>
       <div class="card-info"><span class="muted">Diese Woche:</span> ${es.length ? es.map(chip).join('') : '<span class="muted">noch nichts</span>'}</div>
       <div class="card-info muted">Ø Halbjahr <strong class="avg-inline">${fmtNum(st.avg)}</strong> · ${plural(st.count, 'Note', 'Noten')}</div>
-      ${(() => { const cur = es.find(e => e.date === currentDay()); return cur ? `<div class="card-info cur-info">Am ${WD[wdOf(cur.date)]} ${fmtISO(cur.date)} schon: <strong>${esc(labelEntry(cur))}</strong> – antippen ersetzt den Eintrag</div>` : ''; })()}
-      <div class="big-grades">${GRADES.map(n => `<button type="button" class="gbtn big g${n} ${es.some(e => e.date === currentDay() && e.kind === 'note' && e.grade === n) ? 'cur' : ''}" data-action="cardGrade" data-g="${n}" aria-label="Note ${n}">${n}</button>`).join('')}</div>
+      ${(() => { const cur = es.find(e => e.date === currentDay(s.id)); return cur ? `<div class="card-info cur-info">${weeklyMode(cls) ? 'Diese Woche' : 'Am'} ${WD[wdOf(cur.date)]} ${fmtISO(cur.date)} schon: <strong>${esc(labelEntry(cur))}</strong> – antippen ersetzt den Eintrag</div>` : ''; })()}
+      <div class="big-grades">${GRADES.map(n => `<button type="button" class="gbtn big g${n} ${es.some(e => e.date === currentDay(s.id) && e.kind === 'note' && e.grade === n) ? 'cur' : ''}" data-action="cardGrade" data-g="${n}" aria-label="Note ${n}">${n}</button>`).join('')}</div>
       <div class="card-extra">
         <button type="button" class="btn" data-action="cardAbsent">fehlte</button>
         <button type="button" class="btn" data-action="cardNb">ohne Note</button>
@@ -2188,9 +2266,9 @@
     if (!a && !b) return 'alle Einträge';
     return `${a ? fmtISO(a, true) : '…'} – ${b ? fmtISO(b, true) : '…'}`;
   }
-  const trendHtml = t => t === 'up' ? '<span class="trend up" title="besser geworden">↗</span>'
-    : t === 'down' ? '<span class="trend down" title="schlechter geworden">↘</span>'
-      : t === 'flat' ? '<span class="trend flat" title="gleichbleibend">→</span>' : '<span class="muted">–</span>';
+  const trendHtml = t => t === 'up' ? '<span class="trend up" title="letzte 4 Wochen besser">↑</span>'
+    : t === 'down' ? '<span class="trend down" title="letzte 4 Wochen schlechter">↓</span>'
+      : t === 'flat' ? '<span class="trend flat" title="letzte 4 Wochen etwa gleich">→</span>' : '<span class="muted">–</span>';
   function overviewRows(cls, from, to) {
     const byS = groupBy(entriesOf(cls.id, from, to), 'studentId');
     const rows = studentsOf(cls.id).map(s => ({ s, st: stats(byS.get(s.id) || []) }));
@@ -2235,7 +2313,7 @@
     const avgs = rows.map(r => r.st.avg).filter(x => x != null);
     const total = sum(rows.map(r => r.st.count));
     return `<div class="table-wrap"><table class="ov">
-      <thead><tr>${th('name', 'Name')}${th('avg', 'Ø', 'num')}${th('count', 'Noten', 'num')}<th class="num">Trend</th>${th('absent', 'fehlte', 'num')}</tr></thead>
+      <thead><tr>${th('name', 'Name')}${th('avg', 'Ø', 'num')}${th('count', 'Noten', 'num')}<th class="num" title="letzte 4 Wochen gegenüber davor">Tendenz</th>${th('absent', 'fehlte', 'num')}</tr></thead>
       <tbody>${rows.map(({ s, st }) => `<tr data-action="studentDetail" data-sid="${s.id}" tabindex="0">
         <td>${esc(s.name)}</td>
         <td class="num"><span class="avg ${avgCls(st.avg)}">${fmtNum(st.avg)}</span></td>
@@ -2294,7 +2372,7 @@
       </section>
       <section class="panel"><div class="section-head tight"><h3>Entwicklung</h3>${chartRangeSeg()}</div>
         <div class="chart" data-chart="student" data-sid="${sid}"></div></section>
-      ${results.length ? `<section class="panel"><h3>Tests &amp; Arbeiten</h3><ul class="plain-list">${results.map(({ a, r }) => `<li><div><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest' : 'schriftlich'}</span></div>
+      ${results.length ? `<section class="panel"><h3>Arbeiten/Klausuren</h3><ul class="plain-list">${results.map(({ a, r }) => `<li><div><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)} · ${artLabel(a)}${a.type !== 'vokabel' && weightOf(a) !== 1 ? ` · ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</span></div>
         <span class="res-chip ${r.value == null ? 'none' : valCls(r.value)}">${r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${fmtNum(r.points, 1).replace(',0', '')} P. · ${esc(r.label)}` : esc(r.label)}</span></li>`).join('')}</ul></section>` : ''}
       <section class="panel"><h3>Beobachtungen</h3>
         <form data-submit="addObs" class="obs-form"><input type="hidden" name="sid" value="${sid}"><textarea name="text" rows="2" maxlength="600" placeholder="z. B. beteiligt sich seit dem Referat deutlich mehr"></textarea>
@@ -2383,9 +2461,11 @@
       return shape + `<circle cx="${xx.toFixed(1)}" cy="${yy.toFixed(1)}" r="13" class="hit" data-tip="${esc(tip)}"/>`;
     }).join('');
     const hasV = pts.some(p => p.a.type === 'vokabel'), hasS = pts.some(p => p.a.type !== 'vokabel');
+    const sp = pts.filter(p => p.a.type !== 'vokabel').sort((a, b) => a.a.date.localeCompare(b.a.date));
+    const sline = sp.length > 1 ? `<path d="${sp.map((p, i) => `${i ? 'L' : 'M'}${x(p.wk).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" class="cl-s"/>` : '';
     const empty = !weekly.length && !pts.length;
-    return `<div class="chart-legend"><span><i class="lg lg-m"></i>Mündlich (Wochenschnitt)</span>${hasV ? '<span><i class="lg lg-v"></i>Vokabeltest</span>' : ''}${hasS ? '<span><i class="lg lg-s"></i>Schriftlich</span>' : ''}</div>
-      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Notenentwicklung von ${esc(s.name)}, ${fmtISO(from, true)} bis ${fmtISO(to, true)}">${g}${line}${dots}${marks}
+    return `<div class="chart-legend"><span><i class="lg lg-m"></i>Mündlich (Wochenschnitt)</span>${hasS ? '<span><i class="lg lg-s"></i>Schriftlich inkl. mündl. Prüfung</span>' : ''}${hasV ? '<span><i class="lg lg-v"></i>Vokabeltest</span>' : ''}</div>
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Notenentwicklung von ${esc(s.name)}, ${fmtISO(from, true)} bis ${fmtISO(to, true)}">${g}${sline}${line}${dots}${marks}
       ${empty ? `<text x="${W / 2}" y="${H / 2}" class="ct" text-anchor="middle">Noch keine Noten in diesem Zeitraum</text>` : ''}</svg><div class="chart-tip" hidden></div>`;
   }
   function drawCharts() {
@@ -2423,12 +2503,12 @@
       const vals = rs.map(r => r.value).filter(v => v != null);
       const avg = mean(vals);
       return `<button type="button" class="as-row" data-action="openAssess" data-aid="${a.id}" ${ccStyle(c)}>
-        <div class="as-main"><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)} · ${rs.length}/${students.length} eingetragen</span></div>
+        <div class="as-main"><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)}${a.art === 'muendlich' ? ' · Mündliche Prüfung' : ''}${weightOf(a) !== 1 ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''} · ${rs.length}/${students.length} eingetragen</span></div>
         <span class="res-chip ${valCls(avg)}">Ø ${avg != null ? fmtNum(avg, 2) : '–'}</span>${icon('right')}</button>`;
     };
     return `<div class="toolbar">${classSelect()}</div>${kmPendingPanel(c)}
-      <section class="section"><div class="section-head"><h2>Schriftliche Leistungen</h2><button type="button" class="link" data-action="newAssess" data-type="schriftlich">${icon('plus')} Arbeit</button></div>
-        <p class="muted small pad">Klassenarbeiten bzw. Klausuren inkl. mündlicher Kommunikationsprüfung – zählen 50 % der Zeugnisnote.</p>
+      <section class="section"><div class="section-head"><h2>Schriftliche Leistungen</h2><span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="schriftlich">${icon('plus')} Arbeit</button><button type="button" class="link" data-action="newAssess" data-type="schriftlich" data-art="muendlich">${icon('plus')} Mündliche Prüfung</button></span></div>
+        <p class="muted small pad">Klassenarbeiten bzw. Klausuren und mündliche Prüfungen – zählen 50 % der Zeugnisnote. Gewichtung je Arbeit über den Stift in der Arbeit.</p>
         ${exams.length ? `<div class="mini-list">${exams.map(e => `<button type="button" class="mini-row" data-action="assessFromEvent" data-eid="${e.id}" ${ccStyle(c)}><span class="dot"></span><span class="mini-date">${fmtShort(e.date)}</span><span class="mini-text"><strong>${esc(e.kind || 'Prüfung')}</strong> aus der Planung – Noten eintragen</span>${icon('right')}</button>`).join('')}</div>` : ''}
         ${schr.length ? `<div class="as-list">${schr.map(row).join('')}</div>` : ''}
         <label class="btn file-btn import-btn">${icon('upload')} Noten aus dem Korrektur-Tool importieren<input type="file" accept=".xlsx" data-change="importKA"></label>
@@ -2458,7 +2538,7 @@
     const vals = students.map(s => resultOf(a.id, s.id)).filter(r => r && r.value != null).map(r => r.value);
     const spiegel = [1, 2, 3, 4, 5, 6].map(n => vals.filter(v => Math.round(v + 1e-9) === n || (n === 1 && v < 1)).length);
     let html = `<div class="subhead"><button type="button" class="btn ghost" data-action="closeAssess">${icon('left')} Arbeiten/Klausuren</button></div>
-      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest, max. 10 Punkte' : 'schriftliche Leistung'}</p>
+      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest, max. 10 Punkte' : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
         <div class="spiegel">${spiegel.map((n, i) => `<span class="g${i + 1}"><b>${i + 1}</b>${n}</span>`).join('')}<span class="sp-avg">Ø ${vals.length ? fmtNum(mean(vals), 2) : '–'}</span></div></div>
         <button type="button" class="icon-btn plain" data-action="editAssess" data-aid="${a.id}" aria-label="Bearbeiten">${icon('pencil')}</button></section>
       ${a.km ? `<p class="muted small">Noten aus dem Klausurmanager übernommen.${a.kmMissing && a.kmMissing.length ? ` Ohne Kind im Kurs: ${esc(a.kmMissing.join(', '))} – unter Kinder die Kürzel-Tabelle einlesen.` : ''}</p>` : ''}
@@ -2530,15 +2610,19 @@
   async function editAssessment(a, preset = {}) {
     const isNew = !a;
     const type = a?.type || preset.type || 'schriftlich';
+    const art = a?.art || preset.art || (/mündlich/i.test(preset.title || '') ? 'muendlich' : 'schriftlich');
+    const wNow = weightOf(a);
     const c = S.data.classes[a?.classId || preset.cid || S.classId];
     const nVok = assessmentsOf(c.id, 'vokabel').length;
     const res = await openModal({
       title: isNew ? (type === 'vokabel' ? 'Neuer Vokabeltest' : 'Neue schriftliche Leistung') : 'Bearbeiten',
       autofocus: canHover(),
-      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? `Vokabeltest ${nVok + 1}` : ''))}" placeholder="${type === 'vokabel' ? 'z. B. Vokabeltest Unit 1' : 'z. B. Klassenarbeit 1'}"></label>
-        <label class="field"><span>Datum</span><input type="date" id="m-d" value="${a?.date || preset.date || todayISO()}"></label>`,
+      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? `Vokabeltest ${nVok + 1}` : ''))}" placeholder="${type === 'vokabel' ? 'z. B. Vokabeltest Unit 1' : art === 'muendlich' ? 'z. B. Mündliche Prüfung' : 'z. B. Klassenarbeit 1'}"></label>
+        <label class="field"><span>Datum</span><input type="date" id="m-d" value="${a?.date || preset.date || todayISO()}"></label>
+        ${type !== 'vokabel' ? `<div class="two-col"><label class="field"><span>Art</span><select id="m-art"><option value="schriftlich" ${art !== 'muendlich' ? 'selected' : ''}>Klassenarbeit / Klausur</option><option value="muendlich" ${art === 'muendlich' ? 'selected' : ''}>Mündliche Prüfung</option></select></label>
+          <label class="field"><span>Gewichtung</span><select id="m-w">${[0.5, 1, 1.5, 2, 3].map(w => `<option value="${w}" ${Math.abs(w - wNow) < 1e-9 ? 'selected' : ''}>×${String(w).replace('.', ',')}${w === 1 ? ' (normal)' : ''}</option>`).join('')}</select></label></div>` : ''}`,
       actions: [...(isNew ? [] : [{ label: 'Löschen', cls: 'danger', value: 'delete' }]), { label: 'Abbrechen', value: null },
-        { label: isNew ? 'Anlegen' : 'Speichern', cls: 'primary', run: root => { const t = root.querySelector('#m-t').value.trim(), d = root.querySelector('#m-d').value; if (!t) { shake(root.querySelector('#m-t')); return false; } if (!d) { shake(root.querySelector('#m-d')); return false; } return { title: t, date: d }; } }]
+        { label: isNew ? 'Anlegen' : 'Speichern', cls: 'primary', run: root => { const t = root.querySelector('#m-t').value.trim(), d = root.querySelector('#m-d').value; if (!t) { shake(root.querySelector('#m-t')); return false; } if (!d) { shake(root.querySelector('#m-d')); return false; } const out = { title: t, date: d }; if (root.querySelector('#m-art')) { out.art = root.querySelector('#m-art').value; out.weight = +root.querySelector('#m-w').value; } return out; } }]
     });
     if (!res) return null;
     if (res === 'delete') {
@@ -2922,7 +3006,7 @@
           ${line('Mündlich Ø', r.mAvg, plural(r.mCount, S.data.settings.weighting === 'woche' ? 'Woche' : 'Note', S.data.settings.weighting === 'woche' ? 'Wochen' : 'Noten'))}
           ${c.vocab ? line('Vokabeltests Ø', r.vAvg, `${plural(r.vCount, 'Test', 'Tests')} · ${Math.round(r.vShare * 100)} % der SoMi`) : ''}
           ${line(t.parts ? 'SoMi (Schnitt der Quartale)' : 'SoMi', r.somi, r.quarterSomi ? r.quarterSomi.map(q => q != null ? fmtNum(q, 2) : '–').join(' / ') : null)}
-          ${line('Schriftlich Ø', r.schr, plural(r.sCount, 'Arbeit', 'Arbeiten'))}
+          ${line(r.weighted ? 'Schriftlich Ø (gewichtet)' : 'Schriftlich Ø', r.schr, plural(r.sCount, 'Arbeit', 'Arbeiten'))}
           ${line('Gesamt (50 / 50)', r.total, null)}
           <div class="calc-row big"><span>Vorschlag</span><strong>${gradeText(c, r.suggest)}</strong></div>
         </div>
@@ -3126,8 +3210,12 @@
       <section class="section"><div class="section-head"><h2>Nächste Stunden</h2><button type="button" class="link" data-action="newEvent" data-cid="${c.id}" data-type="ausfall">${icon('ban')} Ausfall</button></div>
         ${nl.length ? `<div class="glist">${nl.map(l => lessonCard(l, { showDate: true })).join('')}</div>` : '<p class="empty-line">Keine Stunden gefunden – trage über das Zahnrad die Unterrichtszeiten ein.</p>'}
       </section>
-      ${aus.length ? `<section class="section"><div class="section-head"><h2>Ausfälle in diesem Abschnitt</h2></div><div class="mini-list">${aus.map(e =>
-        `<button type="button" class="mini-row ${e.date < t ? 'past' : ''}" data-action="editEvent" data-eid="${e.id}" ${ccStyle(c)}><span class="dot ${e.classId ? '' : 'all'}"></span><span class="mini-date">${fmtShort(e.date)}</span><span class="mini-text">${e.classId ? '' : '<strong>ganzer Tag</strong> – '}${esc(e.note || 'Ausfall')}</span></button>`).join('')}</div></section>` : ''}`;
+      ${aus.length ? `<section class="section"><div class="section-head"><h2>Ausfälle bis ${st.next ? esc(st.next.name) : fmtISO(st.to)}</h2></div>${(() => {
+        const up = aus.filter(e => e.date >= t), past = aus.filter(e => e.date < t);
+        const row = e => `<button type="button" class="mini-row ${e.date < t ? 'past' : ''}" data-action="editEvent" data-eid="${e.id}" ${ccStyle(c)}><span class="dot ${e.classId ? '' : 'all'}"></span><span class="mini-date">${fmtShort(e.date)}</span><span class="mini-text">${e.classId ? '' : '<strong>ganzer Tag</strong> – '}${esc(e.note || 'Ausfall')}</span></button>`;
+        return (up.length ? `<div class="mini-list">${up.map(row).join('')}</div>` : '<p class="empty-line">Keine weiteren Ausfälle geplant.</p>')
+          + (past.length ? `<details class="past-aus"><summary>${plural(past.length, 'vergangener Ausfall', 'vergangene Ausfälle')}</summary><div class="mini-list">${past.map(row).join('')}</div></details>` : '');
+      })()}</section>` : ''}`;
 
   }
   function courseStudents(c) {
@@ -3177,6 +3265,8 @@
         <label class="field"><span>Fach</span><input data-change="classSubject" value="${esc(c.subject || '')}" maxlength="40" placeholder="optional"></label>
         <label class="field"><span>Raum</span><input data-change="classRoom" value="${esc(c.room || '')}" maxlength="20" placeholder="optional"></label>
         <label class="field"><span>Stufe (bestimmt Halbjahre/Quartale und Noten bzw. Punkte)</span><select data-change="classLevel">${LEVELS.map(([k, l]) => `<option value="${k}" ${levelOf(c) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Mündliche Noten</span><select data-change="classGradeMode"><option value="woche" ${weeklyMode(c) ? 'selected' : ''}>einmal pro Woche (Standard)</option><option value="stunde" ${weeklyMode(c) ? '' : 'selected'}>für einzelne Unterrichtsstunden</option></select></label>
+        <label class="field"><span>Klassenarbeiten/Klausuren pro Halbjahr</span><select data-change="classExams"><option value="">automatisch (${examsRequired(c, 'HJ1')} im 1. / ${examsRequired(c, 'HJ2')} im 2. Halbjahr)</option>${[1, 2, 3, 4].map(n => `<option value="${n}" ${c.examsPerHj === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" data-change="classVocab" ${c.vocab ? 'checked' : ''}><span>Vokabeltests in diesem Kurs (zählen anteilig zur SoMi-Note)</span></label>
         <div class="field"><span>Farbe</span><div class="swatches">${COLORS.map(col => `<button type="button" class="swatch ${col === c.color ? 'on' : ''}" style="--sw:${col}" data-action="setColor" data-color="${col}" aria-label="Farbe ${col}"></button>`).join('')}</div></div>
       </section>
@@ -3331,7 +3421,7 @@
   function quickAdd(sid, kind, grade) {
     const st = S.data.students[sid];
     if (!st) return;
-    const e = addEntry({ sid, cid: st.classId, kind, grade, date: currentDay() });
+    const e = addEntry({ sid, cid: st.classId, kind, grade, date: currentDay(sid, st.classId) });
     flashRow(sid);
     toast(entryToast(e, st.name), { undo: () => undoEntry(e) });
   }
@@ -3340,7 +3430,7 @@
     const s = list[S.cardIdx];
     if (!s) return;
     if (!S.onlyMissing) S.cardIdx++;
-    const e = addEntry({ sid: s.id, cid: s.classId, kind, grade, date: currentDay() });
+    const e = addEntry({ sid: s.id, cid: s.classId, kind, grade, date: currentDay(s.id, s.classId) });
     toast(entryToast(e, s.name), { undo: () => undoEntry(e) });
   }
   async function editEntry(entry, sid, opts = {}) {
@@ -3350,7 +3440,7 @@
     if (!st) return null;
     let kind = entry?.kind || 'note';
     let grade = entry?.grade || null;
-    const date = entry?.date || opts.date || currentDay();
+    const date = entry?.date || opts.date || currentDay(sid);
     const body = `<p class="muted">${esc(st.name)}</p>
       <div class="seg full" id="m-kind">${[['note', 'Note'], ['fehlte', 'fehlte'], ['nb', 'ohne Note']].map(([k, l]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="grade-pick ${kind !== 'note' ? 'hidden' : ''}" id="m-grades">${GRADES.map(g => `<button type="button" data-g="${g}" class="gbtn g${g} ${g === grade ? 'on' : ''}">${g}</button>`).join('')}</div>
@@ -4138,6 +4228,8 @@
     },
     classLevel(v) { if (S.courseId) updateClass(S.courseId, { level: v }); },
     classVocab(v, el) { if (S.courseId) updateClass(S.courseId, { vocab: el.checked }); },
+    classGradeMode(v) { if (S.courseId) updateClass(S.courseId, { gradeMode: v === 'stunde' ? 'stunde' : 'woche' }); },
+    classExams(v) { if (S.courseId) updateClass(S.courseId, { examsPerHj: v ? +v : null }); },
     backupImport(v, el) { const file = el.files && el.files[0]; el.value = ''; importBackup(file); }
   };
 
@@ -4211,7 +4303,7 @@
     notenTab(d) { S.notenTab = d.tab; S.detailStudent = null; S.assessId = null; render(); },
     openAssess(d) { S.assessId = d.aid; S.vIdx = 0; S.vHalf = false; S.vMode = 'karte'; render(); window.scrollTo(0, 0); },
     closeAssess() { S.assessId = null; render(); },
-    async newAssess(d) { const id = await editAssessment(null, { type: d.type, cid: S.classId }); if (id) { S.assessId = id; S.vIdx = 0; S.vMode = 'karte'; render(); } },
+    async newAssess(d) { const id = await editAssessment(null, { type: d.type, art: d.art, cid: S.classId }); if (id) { S.assessId = id; S.vIdx = 0; S.vMode = 'karte'; render(); } },
     async assessFromEvent(d) {
       const e = S.data.events[d.eid];
       const n = assessmentsOf(e.classId, 'schriftlich').length + 1;
@@ -4259,6 +4351,7 @@
     tFilter(d) { S.tFilter = d.f; render(); },
     jRange(d) { S.jRange = d.r; render(); },
     jCourse(d) { S.jCourse = d.cid; render(); },
+    monthStep(d) { S[d.k] = (S[d.k] || 0) + (+d.d); render(); },
     dayInfo(d) { dayInfo(d.date); },
     weekPrev() { S.weekStart = addDaysISO(S.weekStart, -7); S.day = null; S.cardIdx = 0; render(); },
     weekNext() { S.weekStart = addDaysISO(S.weekStart, 7); S.day = null; S.cardIdx = 0; render(); },
@@ -4515,5 +4608,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft };
 })();
