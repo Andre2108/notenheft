@@ -2,6 +2,11 @@
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
 
+## Neu in Version 6.3
+
+- **Fehlende mündliche Noten** (Heute → Kachel): Vor jeder Kurswoche ein **Haken**. Mehrere ankreuzen → unten „… keine Noten eintragen“ → in der Liste ausdrücklich **bestätigen**. Diese Wochen verschwinden aus den fehlenden Noten und aus allen Erinnerungen. Wahlweise im selben Schritt: für die Kurse **überhaupt keine** mündlichen Noten mehr.
+- **To-do jeden Freitag:** „Mündliche Noten eintragen“ (bzw. am letzten Schultag der Woche), nicht in Ferienwochen. Antippen öffnet die Noteneingabe; sind alle Noten der Woche drin, hakt es sich selbst ab.
+
 ## Neu in Version 6.2
 
 - **Ferienwochen:** Keine Kachel „Mündliche Noten eintragen“, keine fehlenden Noten, keine Erinnerung. In der Noteneingabe steht ein Hinweis statt der Liste; die Wochen-Pfeile springen über die Ferien. Seit 6.2.1.
