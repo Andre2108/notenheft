@@ -1,6 +1,14 @@
-# Notenheft 6.5 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.5.1 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.5.1
+
+- **Mehrarbeit** ist jetzt ein eigener Reiter unten in der Hauptleiste (nicht mehr im Planer).
+- **Dienstagsraster:** 1. Std. (GD) 8:00–9:00, 2./3. 9:00–10:30, 4./5. 10:45–12:15, 6./7. 12:30–14:05, 8. 14:20–15:05 – Zeiten in Heute, Woche und Mehrarbeit stimmen dienstags.
+- **GD, LW & Co.:** Wöchentliche Untis-Stunden ohne eigenen Kurs erscheinen grau im Stundenplan (zählen nicht als Mehrarbeit).
+- **Vertretung bearbeiten:** oben Datum, Stunde und Uhrzeit; statt „von/bis“ ein Feld „Stunde“ (z. B. „1. Std. · 08:00–08:45 Uhr“). Felder überlappen nicht mehr.
+- **Raumänderung** im Kursfenster groß, bei Doppelstunden je Stunde.
 
 ## Neu in Version 6.5 – Mehrarbeit
 

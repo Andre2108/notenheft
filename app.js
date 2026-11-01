@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.5';
+  const APP_VERSION = '6.5.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -16,6 +16,11 @@
     ['08:00', '08:45'], ['08:45', '09:30'], ['09:50', '10:35'], ['10:35', '11:20'], ['11:40', '12:25'],
     ['12:30', '13:15'], ['13:35', '14:20'], ['14:20', '15:05'], ['15:10', '15:55'], ['15:55', '16:40']
   ].map(([start, end]) => ({ start, end }));
+  // Abweichendes Raster je Wochentag (1 = Mo): dienstags 8–9 Uhr Gottesdienst, danach verschoben
+  const DEFAULT_PERIODS_WD = { 2: [
+    ['08:00', '09:00'], ['09:00', '09:45'], ['09:45', '10:30'], ['10:45', '11:30'], ['11:30', '12:15'],
+    ['12:30', '13:15'], ['13:20', '14:05'], ['14:20', '15:05'], ['15:10', '15:55'], ['15:55', '16:40']
+  ].map(([start, end]) => ({ start, end })) };
   // Notenraster (universitäre Rundung): Bezeichnung ↔ Zahlenwert
   const GRID = [['1+', 0.7], ['1', 1.0], ['1-', 1.3], ['2+', 1.7], ['2', 2.0], ['2-', 2.3], ['3+', 2.7], ['3', 3.0], ['3-', 3.3],
     ['4+', 3.7], ['4', 4.0], ['4-', 4.3], ['5+', 4.7], ['5', 5.0], ['5-', 5.3], ['6', 6.0]];
@@ -310,7 +315,12 @@
   const clsLabel = c => c ? (c.subject ? `${c.name} · ${c.subject}` : c.name) : '';
   const clsColor = c => (c && c.color) || COLORS[0];
   const nextColor = () => { const used = live(S.data.classes).map(c => c.color); return COLORS.find(c => !used.includes(c)) || COLORS[used.length % COLORS.length]; };
-  const periods = () => S.data.settings.periods;
+  // Stundenraster; mit Datum (ISO) oder Wochentag (1–7) ggf. das abweichende Raster dieses Tages
+  const periods = (day = null) => {
+    const wd = typeof day === 'number' ? day : day ? wdOf(day) + 1 : null;
+    const W = S.data.settings.periodsWd || DEFAULT_PERIODS_WD;
+    return (wd && W[wd]) || S.data.settings.periods;
+  };
 
   function ensureClass() {
     const cs = classesSorted();
@@ -369,8 +379,8 @@
     if (wdOf(iso) >= 5) return 'Wochenende';
     return null;
   }
-  function periodTimes(from, to) {
-    const P = periods();
+  function periodTimes(from, to, day = null) {
+    const P = periods(day);
     return { start: P[from - 1]?.start || '', end: P[to - 1]?.end || P[to - 1]?.start || '' };
   }
   const eventsOn = iso => live(S.data.events).filter(e => e.date === iso);
@@ -397,7 +407,7 @@
         // Einzelstunde aus einer Doppelstunde tauschen: Block aufteilen
         const eFrom = e.to ? e.from : l.from, eTo = e.to ? Math.min(Math.max(e.to, e.from), l.to) : l.to;
         if (eFrom > l.from || eTo < l.to) {
-          const mk = (f, t) => ({ ...l, from: f, to: t, hours: t - f + 1, ...periodTimes(f, t) });
+          const mk = (f, t) => ({ ...l, from: f, to: t, hours: t - f + 1, ...periodTimes(f, t, l.date) });
           const parts = [];
           if (eFrom > l.from) parts.push(mk(l.from, eFrom - 1));
           const mid = mk(eFrom, eTo); parts.push(mid);
@@ -422,7 +432,7 @@
       if (cid && c.id !== cid) continue;
       for (const sl of (c.slots || [])) {
         if (sl.wd !== wd || !slotValid(sl, iso)) continue;
-        const t = periodTimes(sl.from, sl.to);
+        const t = periodTimes(sl.from, sl.to, iso);
         const aus = ausfallFor(iso, c.id);
         out.push({
           cls: c, date: iso, from: sl.from, to: sl.to, hours: sl.to - sl.from + 1,
@@ -502,8 +512,8 @@
     }
     return out;
   }
-  function periodRange(t1, t2) { // Stundenraster passend zur Uhrzeit (Untis-Zeiten weichen manchmal ab, z. B. dienstags)
-    const P = periods(), len = tmin(t2) - tmin(t1);
+  function periodRange(t1, t2, iso) { // Stunden des Rasters, die zur Uhrzeit passen
+    const P = periods(iso), len = tmin(t2) - tmin(t1);
     const hit = P.map((p, i) => ({ i, o: overlapMin(t1, t2, p.start, p.end || p.start), l: tmin(p.end || p.start) - tmin(p.start) }))
       .filter(x => x.o > 0 && (x.o * 2 >= x.l || x.o * 2 >= len));
     return hit.length ? [hit[0].i + 1, hit[hit.length - 1].i + 1] : null;
@@ -522,7 +532,7 @@
   function untisDay(iso) {
     const U = untisData();
     if (U.days.has(iso)) return U.days.get(iso);
-    const res = { plan: [], eigen: [], fremd: [], handled: new Set() };
+    const res = { plan: [], eigen: [], fremd: [], regel: [], handled: new Set() };
     U.days.set(iso, res);
     const all = (U.byDate.get(iso) || []).slice().sort((a, b) => a.start.localeCompare(b.start));
     if (!all.length || freeReason(iso)) return res;
@@ -536,13 +546,16 @@
       const hits = base.filter(l => overlapMin(l.start, l.end, time, endT) > 0);
       const pl = hits.find(l => own.some(c => c.id === l.cls.id)) || (!t.info && regular ? hits[0] : null); // ohne Klassenangabe (alte Daten): wöchentliche Stunde zur Planstunde
       if (pl) { res.plan.push({ id: t.id, cls: pl.cls, time, endT, ort: t.ort }); res.handled.add(t.id); continue; }
-      if (regular) { res.handled.add(t.id); continue; }
-      const pr = periodRange(time, endT);
-      if (!pr || !t.titel) continue; // ohne Stundenraster oder ohne Fach (z. B. Aufsicht) bleibt es ein Kalendereintrag
+      const pr = periodRange(time, endT, iso);
+      if (regular) { // wöchentlich, aber kein Notenheft-Kurs (z. B. GD, LW): anzeigen, zählt nicht als Mehrarbeit
+        res.handled.add(t.id);
+        if (!pr || !t.titel || hits.length) continue;
+      } else if (!pr || !t.titel) continue; // ohne Stundenraster oder ohne Fach (z. B. Aufsicht) bleibt es ein Kalendereintrag
       const x = { id: t.id, ids: [t.id], from: pr[0], to: pr[1], start: time, end: endT, fach: t.titel.replace(/\s+/g, ' ').trim(), klassen: info.klassen, ort: t.ort,
         cls: own.length === 1 ? own[0] : null, ber: bers.some(b => overlapMin(b.start, b.ende, t.start, t.ende) > 0) };
       x.titel = [x.fach, klassenTxt(x.klassen)].filter(Boolean).join(' · ');
-      const list = x.cls ? res.eigen : res.fremd, prev = list[list.length - 1];
+      if (regular) x.regel = true;
+      const list = regular ? res.regel : x.cls ? res.eigen : res.fremd, prev = list[list.length - 1];
       res.handled.add(t.id);
       if (prev && prev.to + 1 === x.from && prev.titel === x.titel && prev.cls === x.cls && normRoom(prev.ort) === normRoom(x.ort)) { prev.to = x.to; prev.end = x.end; prev.ids.push(t.id); prev.ber = prev.ber || x.ber; continue; }
       list.push(x);
@@ -554,10 +567,12 @@
     const u = untisDay(iso);
     for (const l of ls) { // Raum je Stunde aus Untis (Doppelstunde ggf. in zwei Räumen)
       if (l.away) continue;
-      const rooms = [...new Set(u.plan.filter(p => p.cls.id === l.cls.id && p.ort && overlapMin(l.start, l.end, p.time, p.endT) > 0).sort((a, b) => a.time.localeCompare(b.time)).map(p => p.ort))];
+      const ps = u.plan.filter(p => p.cls.id === l.cls.id && p.ort && overlapMin(l.start, l.end, p.time, p.endT) > 0).sort((a, b) => a.time.localeCompare(b.time));
+      const rooms = [...new Set(ps.map(p => p.ort))];
       if (!rooms.length || rooms.every(r => normRoom(r) === normRoom(l.room))) continue;
       if (l.room) l.roomOld = l.room;
       l.room = rooms.join(' / ');
+      if (rooms.length > 1) l.roomDetail = ps.map(p => { const pr = periodRange(p.time, p.endT, iso); return `${pr ? pLabel(pr[0], pr[1]) : p.time}: ${p.ort}`; });
     }
     let add = false;
     for (const e of u.eigen) {
@@ -570,7 +585,8 @@
     return add ? ls.sort((a, b) => a.from - b.from || collator.compare(a.cls.name, b.cls.name)) : ls;
   }
   // Vertretungen ohne eigenen Kurs: als Stunde im Plan; Antippen öffnet die Mehrarbeit
-  const untisFremd = iso => !untisCals().length || freeReason(iso) ? [] : untisDay(iso).fremd.map(x => ({ ...x, date: iso, hours: x.to - x.from + 1, fremd: true, ma: S.data.mehrarbeit?.['ma-' + x.id] || null }));
+  // dazu wöchentliche Untis-Stunden ohne eigenen Kurs (GD, LW …) mit regel: true
+  const untisFremd = iso => { if (!untisCals().length || freeReason(iso)) return []; const u = untisDay(iso); return u.fremd.concat(u.regel).sort((a, b) => a.from - b.from).map(x => ({ ...x, date: iso, hours: x.to - x.from + 1, fremd: true, ma: x.regel ? null : S.data.mehrarbeit?.['ma-' + x.id] || null })); };
   const roomHtml = l => l.roomOld ? `<b class="room-chg" title="Raumänderung laut WebUntis">${esc(l.room)}</b> statt ${esc(l.roomOld)}` : esc(l.room);
   const byTime = (a, b) => a.from - b.from || String(a.start).localeCompare(String(b.start));
   function lessonsBetween(cid, fromIso, toIso) {
@@ -1456,9 +1472,9 @@
   /* =====================================================================
      Grundgerüst
      ===================================================================== */
-  const TABS = [['start', 'Heute', 'home'], ['planer', 'Planer', 'week'], ['neu', 'Eintragen', 'plus'], ['kurse', 'Kurse', 'book'], ['mehr', 'Mehr', 'more']];
-  const TAB_OF = { neu: 'neu', start: 'start', heute: 'start', todos: 'start', fehlend: 'kurse', woche: 'planer', termine: 'planer', jahr: 'planer', mehrarbeit: 'planer', kurse: 'kurse', mehr: 'mehr' };
-  const PLANER = [['woche', 'Woche'], ['termine', 'Termine'], ['jahr', 'Jahr'], ['mehrarbeit', 'Mehrarbeit']];
+  const TABS = [['start', 'Heute', 'home'], ['planer', 'Planer', 'week'], ['neu', 'Eintragen', 'plus'], ['kurse', 'Kurse', 'book'], ['mehrarbeit', 'Mehrarbeit', 'clock'], ['mehr', 'Mehr', 'more']];
+  const TAB_OF = { neu: 'neu', start: 'start', heute: 'start', todos: 'start', fehlend: 'kurse', woche: 'planer', termine: 'planer', jahr: 'planer', mehrarbeit: 'mehrarbeit', kurse: 'kurse', mehr: 'mehr' };
+  const PLANER = [['woche', 'Woche'], ['termine', 'Termine'], ['jahr', 'Jahr']];
   const planerSeg = () => `<div class="seg full planer-seg">${PLANER.map(([k, l]) => `<button type="button" data-action="goto" data-view="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -1686,10 +1702,10 @@
   const fremdSub = x => `${pLabel(x.from, x.to)}${x.ort ? ' · ' + esc(x.ort) : ''}${x.ma?.fuer ? ' · für ' + esc(x.ma.fuer) : ''}${x.ber ? ' · in der Bereitschaft' : ''}`;
   function fremdCard(x) { // Vertretung laut WebUntis (kein eigener Kurs) – Antippen: Details/Mehrarbeit
     const running = lessonRunning(x), past = !running && lessonStarted(x) && x.date === todayISO();
-    return `<button type="button" class="lrow untis-fremd ${running ? 'running' : ''} ${past ? 'past' : ''}" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${x.date}">
+    return `<button type="button" class="lrow untis-fremd ${x.regel ? 'regel' : ''} ${running ? 'running' : ''} ${past ? 'past' : ''}" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${x.date}">
       <span class="lr-time"><b>${esc(x.start)}</b><small>${esc(x.end)}</small></span>
       <span class="lr-bar"></span>
-      <span class="lr-main"><span class="lr-title"><b>${esc(x.titel || 'Stunde')}</b> <span class="lr-swap untis">Vertretung</span>${running ? ' <span class="lr-now">jetzt</span>' : ''}</span>
+      <span class="lr-main"><span class="lr-title"><b>${esc(x.titel || 'Stunde')}</b> ${x.regel ? '' : '<span class="lr-swap untis">Vertretung</span>'}${running ? ' <span class="lr-now">jetzt</span>' : ''}</span>
         <small>${fremdSub(x)}</small></span>
     </button>`;
   }
@@ -1903,7 +1919,7 @@
     const cur = ls.find(l => lessonRunning(l)) || ls.find(l => !lessonStarted(l));
     const fr = untisFremd(t).find(x => lessonRunning(x) || !lessonStarted(x));
     if (fr && (!cur || fr.from < cur.from && !lessonRunning(cur))) {
-      html += `<button type="button" class="start-now untis-fremd" data-action="maOpen" data-uid="${esc(fr.id)}" data-date="${t}"><span class="sn-k">${lessonRunning(fr) ? 'Jetzt' : `Als Nächstes · ${esc(fr.start)} Uhr`} · Vertretung</span>
+      html += `<button type="button" class="start-now untis-fremd ${fr.regel ? 'regel' : ''}" data-action="maOpen" data-uid="${esc(fr.id)}" data-date="${t}"><span class="sn-k">${lessonRunning(fr) ? 'Jetzt' : `Als Nächstes · ${esc(fr.start)} Uhr`}${fr.regel ? '' : ' · Vertretung'}</span>
         <b>${esc(fr.titel || 'Stunde')}</b><small>${fremdSub(fr)}</small></button>`;
     } else if (cur) {
       const run = lessonRunning(cur);
@@ -1915,7 +1931,7 @@
       const d = addDaysISO(t, 1); // erst am Vortag zeigen
       const nl0 = lessonsOn(d).find(l => !l.away && !l.cancelled), nf = untisFremd(d)[0];
       const nl = nf && (!nl0 || nf.from < nl0.from) ? nf : nl0;
-      const nlName = !nl ? '' : nl.fremd ? `${esc(nl.titel || 'Stunde')} <span>Vertretung</span>` : `${esc(nl.cls.name)} <span>${esc(nl.cls.subject || '')}</span>`;
+      const nlName = !nl ? '' : nl.fremd ? `${esc(nl.titel || 'Stunde')} <span>${nl.regel ? '' : 'Vertretung'}</span>` : `${esc(nl.cls.name)} <span>${esc(nl.cls.subject || '')}</span>`;
       html += `<div class="start-now calm"><span class="sn-k">${ls.length ? 'Heute kein Unterricht mehr' : free ? esc(free) : 'Heute kein Unterricht'}</span>
         ${nl ? `<b>${diffDays(t, d) === 1 ? 'Morgen' : `${WD_LONG[wdOf(d)]}, ${fmtISO(d)}`}: ${nlName}</b><small>${esc(nl.start)} Uhr · ${pLabel(nl.from, nl.to)}${nl.fremd ? (nl.ort ? ' · ' + esc(nl.ort) : '') + (nl.ber ? ' · in der Bereitschaft' : '') : nl.room ? ' · ' + roomHtml(nl) : ''}</small>` : ''}</div>`;
     }
@@ -2210,14 +2226,14 @@
       }
       for (const x of untisFremd(d)) {
         if (x.from > maxP) continue;
-        cells += `<button type="button" class="pg-lesson untis-fremd ${lessonRunning(x) ? 'running' : ''}" style="grid-column:${i + 2};grid-row:${x.from + 1} / ${Math.min(x.to, maxP) + 2}" title="Vertretung laut WebUntis: ${esc(x.titel)}" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${d}">
-          <strong>${esc(x.klassen.length ? klassenTxt(x.klassen) : x.fach)}</strong><span class="pg-subj">${esc(x.klassen.length ? x.fach + ' · ' : '')}Vertretung</span>${x.ort ? `<span class="pg-room">${esc(x.ort)}</span>` : ''}<span class="pg-flag untis">${x.ber ? 'Ber' : 'neu'}</span></button>`;
+        cells += `<button type="button" class="pg-lesson untis-fremd ${x.regel ? 'regel' : ''} ${lessonRunning(x) ? 'running' : ''}" style="grid-column:${i + 2};grid-row:${x.from + 1} / ${Math.min(x.to, maxP) + 2}" title="Vertretung laut WebUntis: ${esc(x.titel)}" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${d}">
+          <strong>${esc(x.regel || !x.klassen.length ? x.fach : klassenTxt(x.klassen))}</strong><span class="pg-subj">${esc(x.regel ? klassenTxt(x.klassen) : x.klassen.length ? x.fach + ' · Vertretung' : 'Vertretung')}</span>${x.ort ? `<span class="pg-room">${esc(x.ort)}</span>` : ''}${x.regel ? '' : `<span class="pg-flag untis">${x.ber ? 'Ber' : 'neu'}</span>`}</button>`;
       }
     });
     return `<div class="plan-wrap"><div class="plan-grid" style="grid-template-rows:auto repeat(${maxP}, minmax(46px, auto))">${cells}</div></div>`;
   }
-  const fremdRow = x => `<button type="button" class="ag-row untis-fremd" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${x.date}"><span class="ag-time">${esc(x.start)}</span><span class="ag-bar"></span>
-    <span class="ag-txt"><b>${esc(x.titel || 'Stunde')}</b> <small>${fremdSub(x)}</small></span><span class="ag-tag u">Vertretung</span></button>`;
+ const fremdRow = x => `<button type="button" class="ag-row untis-fremd ${x.regel ? 'regel' : ''}" data-action="maOpen" data-uid="${esc(x.id)}" data-date="${x.date}"><span class="ag-time">${esc(x.start)}</span><span class="ag-bar"></span>
+    <span class="ag-txt"><b>${esc(x.titel || 'Stunde')}</b> <small>${fremdSub(x)}</small></span>${x.regel ? '' : '<span class="ag-tag u">Vertretung</span>'}</button>`;
   function weekAgenda(w0iso) {
     const t = todayISO();
     return `<div class="agenda">${[0, 1, 2, 3, 4].map(i => {
@@ -3918,7 +3934,7 @@
     return `<section class="panel">
         <h3>Wöchentliche Stunden</h3>
         ${slots.length ? `<ul class="slot-list">${slots.map(s => {
-          const t = periodTimes(s.from, s.to);
+          const t = periodTimes(s.from, s.to, s.wd);
           const past = s.validTo && s.validTo < todayISO();
           const valid = s.validFrom || s.validTo ? ` · ${s.validFrom ? 'ab ' + fmtISO(s.validFrom) : ''}${s.validFrom && s.validTo ? ' ' : ''}${s.validTo ? 'bis ' + fmtISO(s.validTo) : ''}` : '';
           return `<li ${ccStyle(c)} class="${past ? 'past' : ''}"><span class="slot-day">${WD[s.wd - 1]}</span><span class="slot-p">${pLabel(s.from, s.to)}<small>${esc(t.start)}–${esc(t.end)}${s.room ? ' · ' + esc(s.room) : ''}${valid}</small></span>
@@ -4038,27 +4054,36 @@
   }
   async function maEdit(m0, { neu = false } = {}) { // Details einer Vertretung; Kürzel der vertretenen Lehrkraft eintragen
     const m = Object.assign({ fuer: '', zaehlt: true, ber: false, fach: '', klassen: '', ort: '', from: 1, to: 1, date: todayISO() }, m0);
-    const P = periods(), opt = (v, sel) => P.map((p, i) => `<option value="${i + 1}" ${i + 1 === +sel ? 'selected' : ''}>${i + 1}. Std. (${esc(p.start)})</option>`).join('');
+    const stdOpts = (date, sel) => { // „1. Std. · 08:00–08:45“, „1.–2. Std. · 08:00–09:30“ … (Raster des Tages)
+      const P = periods(/^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null), out = [];
+      for (let f = 1; f <= P.length; f++) for (let t = f; t <= Math.min(P.length, f + 2); t++) {
+        const tt = periodTimes(f, t, date), v = `${f}-${t}`;
+        out.push(`<option value="${v}" ${v === sel ? 'selected' : ''}>${pLabel(f, t)} · ${esc(tt.start)}–${esc(tt.end)} Uhr${t > f ? ` (${t - f + 1} Std.)` : ''}</option>`);
+      }
+      return out.join('');
+    };
     const r = await openModal({
       title: neu ? 'Vertretung nachtragen' : 'Vertretung',
-      body: `${m.quelle === 'untis' ? `<p class="muted small">Aus WebUntis${m.ber ? ' · in deiner Bereitschaft' : ''}${m.start ? ` · ${esc(m.start)}–${esc(m.end)} Uhr` : ''}. Wer vertreten wird, steht nicht im Untis-Kalender – bitte das Kürzel eintragen.</p>` : ''}
+      body: `${neu ? '' : `<div class="ma-head"><b>${fmtLong(m.date)}</b><span>${pLabel(m.from, m.to || m.from)} · ${esc(m.start || periodTimes(m.from, m.to || m.from, m.date).start)}–${esc(m.end || periodTimes(m.from, m.to || m.from, m.date).end)} Uhr${m.ber ? ' · in deiner Bereitschaft' : ''}</span></div>`}
+        ${m.quelle === 'untis' ? `<p class="muted small">Aus WebUntis. Die vertretene Lehrkraft steht nicht im Untis-Kalender – bitte das Kürzel eintragen.</p>` : ''}
         <label class="field"><span>Vertretene Lehrkraft (Kürzel)</span><input id="ma-fuer" maxlength="10" autocapitalize="characters" value="${esc(m.fuer)}" placeholder="z. B. VT"></label>
         <div class="two-col"><label class="field"><span>Klasse</span><input id="ma-kl" maxlength="60" value="${esc(m.klassen)}" placeholder="z. B. 09b"></label>
           <label class="field"><span>Fach</span><input id="ma-fach" maxlength="30" value="${esc(m.fach)}" placeholder="z. B. E"></label></div>
         <div class="two-col"><label class="field"><span>Datum</span><input id="ma-date" type="date" value="${esc(m.date)}"></label>
           <label class="field"><span>Raum</span><input id="ma-ort" maxlength="30" value="${esc(m.ort)}"></label></div>
-        <div class="two-col"><label class="field"><span>von</span><select id="ma-from">${opt(0, m.from)}</select></label><label class="field"><span>bis</span><select id="ma-to">${opt(0, m.to)}</select></label></div>
+        <label class="field"><span>Stunde</span><select id="ma-std">${stdOpts(m.date, `${m.from}-${m.to || m.from}`)}</select></label>
         <label class="check"><input type="checkbox" id="ma-ber" ${m.ber ? 'checked' : ''}> in meiner Bereitschaft</label>
         <label class="check"><input type="checkbox" id="ma-z" ${m.zaehlt !== false ? 'checked' : ''}> zählt als Mehrarbeit</label>`,
       actions: [...(neu ? [] : [{ label: 'Löschen', cls: 'danger', value: 'del' }]), { label: 'Abbrechen', value: null },
         { label: 'Speichern', cls: 'primary', run: root => {
           const v = id => root.querySelector(id).value.trim();
-          const from = +v('#ma-from'), to = Math.max(from, +v('#ma-to'));
+          const [from, to] = v('#ma-std').split('-').map(Number);
           if (!/^\d{4}-\d{2}-\d{2}$/.test(v('#ma-date'))) { toast('Bitte ein Datum wählen.'); return false; }
           return { fuer: v('#ma-fuer').toUpperCase(), klassen: v('#ma-kl'), fach: v('#ma-fach'), date: v('#ma-date'), ort: v('#ma-ort'), from, to,
             ber: root.querySelector('#ma-ber').checked, zaehlt: root.querySelector('#ma-z').checked };
         } }],
-      autofocus: neu && canHover()
+      autofocus: neu && canHover(),
+      mount: root => { const di = root.querySelector('#ma-date'), st = root.querySelector('#ma-std'); di.addEventListener('change', () => { st.innerHTML = stdOpts(di.value, st.value); }); }
     });
     if (!r) return;
     const id = m.id || 'ma-' + uid();
@@ -4068,7 +4093,7 @@
       toast('Gelöscht'); return;
     }
     const kern = ['date', 'from', 'to', 'fach', 'klassen', 'ort'].some(k => String(r[k]) !== String(m[k] ?? ''));
-    const t = periodTimes(r.from, r.to);
+    const t = periodTimes(r.from, r.to, r.date);
     commit(d => {
       const prev = d.mehrarbeit[id] && !d.mehrarbeit[id].deleted ? d.mehrarbeit[id] : {};
       d.mehrarbeit[id] = Object.assign({ quelle: m.quelle || 'hand', createdAt: now(), classId: m.classId || null }, prev, r, { id, edited: prev.edited || kern || !m.quelle,
@@ -4079,8 +4104,10 @@
   function maOpenUntis(uidv, date) { // aus Stundenplan/Heute: gespeicherte Mehrarbeit oder frisch aus Untis
     const id = 'ma-' + uidv, m = S.data.mehrarbeit?.[id];
     if (m && !m.deleted) return maEdit(m);
-    const u = untisDay(date), x = u.fremd.concat(u.eigen).find(y => y.id === uidv);
+    const u = untisDay(date), x = u.fremd.concat(u.eigen, u.regel).find(y => y.id === uidv);
     if (!x) return toast('Diese Stunde steht nicht mehr in WebUntis.');
+    if (x.regel) return openModal({ title: x.fach, body: `<div class="ma-head regel"><b>${fmtLong(date)}</b><span>${pLabel(x.from, x.to)} · ${esc(x.start)}–${esc(x.end)} Uhr</span></div>
+      ${x.klassen.length ? `<p><b>Klassen:</b> ${esc(x.klassen.join(', '))}</p>` : ''}${x.ort ? `<p class="room-big">${esc(x.ort)}</p>` : ''}<p class="muted small">Wöchentliche Stunde laut WebUntis (kein Kurs im Notenheft, zählt nicht als Mehrarbeit).</p>`, actions: [{ label: 'Schließen' }] });
     return maEdit({ id, quelle: 'untis', date, from: x.from, to: x.to, start: x.start, end: x.end, fach: x.fach, klassen: x.klassen.join(', '), ort: x.ort || '', ber: x.ber, classId: x.cls?.id || null, zaehlt: true, fuer: '' });
   }
   function viewMehr() {
@@ -4430,7 +4457,7 @@
     const lessonOpts = (d, c, sel, ownId) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return [];
       return lessonsOn(d, c).filter(l => !l.swapIn && !l.ausfall && (!l.away || l.away.id === ownId))
-        .flatMap(l => rangesOf(l).map(([f, t, lab]) => { const v = `${f}-${t}`; const tt = periodTimes(f, t);
+        .flatMap(l => rangesOf(l).map(([f, t, lab]) => { const v = `${f}-${t}`; const tt = periodTimes(f, t, d);
           return `<option value="${v}" ${v === sel ? 'selected' : ''}>${lab} · ${esc(tt.start)}–${esc(tt.end)}${l.away && l.away.id !== ownId ? ' – schon getauscht' : ''}</option>`; }));
     };
     const pair = ev?.pairId ? S.data.events[ev.pairId] : null;
@@ -4517,7 +4544,7 @@
 
   async function lessonSheet(cid, date, from) {
     const c0 = S.data.classes[cid];
-    const l = lessonsOn(date, cid).find(x => x.from === from) || { cls: c0, date, from, to: from, hours: 1, cancelled: null, ...periodTimes(from, from), room: c0?.room };
+    const l = lessonsOn(date, cid).find(x => x.from === from) || { cls: c0, date, from, to: from, hours: 1, cancelled: null, ...periodTimes(from, from, date), room: c0?.room };
     const c = l.cls;
     const exams = eventsOn(date).filter(e => e.type === 'pruefung' && e.classId === cid);
     const aus = l.ausfall;
@@ -4529,10 +4556,11 @@
       body: `<div class="sheet-head" ${ccStyle(c)}><div class="sheet-bar"></div><div>
           <strong>${fmtLong(date)}</strong>
           <span>${pLabel(l.from, l.to)} · ${esc(l.start)}–${esc(l.end)}${l.room ? ' · ' + esc(l.room) : ''}</span></div></div>
+        ${l.roomOld && !l.cancelled ? `<div class="room-change"><span>Raumänderung laut WebUntis</span><b>${esc(l.room)}</b><small>statt ${esc(l.roomOld)}${l.roomDetail ? ' · ' + esc(l.roomDetail.join(' · ')) : ''}</small></div>` : ''}
         ${l.away ? `<div class="lesson-note swap">${icon('swap')} Getauscht: stattdessen ${esc(clsLabel(S.data.classes[l.away.toClassId]))}</div>`
           : l.swapIn ? `<div class="lesson-note swap">${icon('swap')} Tausch: diese Stunde statt ${esc(clsLabel(l.swapFrom))}</div>`
           : l.cancelled ? `<div class="lesson-note cancel">${icon('ban')} Fällt aus: ${esc(l.cancelled)}${aus && !aus.classId ? ' (ganzer Tag)' : ''}</div>`
-          : l.untis ? `<div class="lesson-note swap">${icon('info')} Zusätzliche Stunde laut WebUntis${l.ber ? ' (in deiner Bereitschaft)' : ''} – steht unter Planer → Mehrarbeit.</div>` : ''}
+          : l.untis ? `<div class="lesson-note swap">${icon('info')} Zusätzliche Stunde laut WebUntis${l.ber ? ' (in deiner Bereitschaft)' : ''} – steht unter Mehrarbeit.</div>` : ''}
         ${exams.map(e => `<div class="lesson-note exam">${icon('flag')} ${esc(e.kind || 'Prüfung')}${e.note ? ' – ' + esc(e.note) : ''}</div>`).join('')}
         ${lTodos.length ? `<div class="sheet-todos"><h4>${icon('todo')} Vor dieser Stunde erledigen</h4>${todoList(lTodos, { course: false })}</div>` : ''}
         <div class="sheet-actions">
