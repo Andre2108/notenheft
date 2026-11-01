@@ -1,7 +1,7 @@
 /*! Notenheft 6.4 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.4.2';
+  const APP_VERSION = '6.4.3';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -381,7 +381,11 @@
   const normCls = n => String(n || '').toLowerCase().replace(/\s+/g, '').replace(/^0+(?=\d)/, '');
   const partnersOf = c => c ? classesSorted().filter(o => o.id !== c.id && normCls(o.name) === normCls(c.name)) : [];
   const swapName = (c, other) => !c ? '?' : other && normCls(c.name) === normCls(other.name) ? (c.subject || c.name) : clsLabel(c); // „Englisch“ bzw. bei anderer Klasse „05d · Englisch“
-  function lessonsOn(iso, cid = null) {
+  function lessonsOn(iso, cid = null) { // Stundenplan inkl. Tausch, abgeglichen mit WebUntis (Raumänderungen, zusätzliche Stunden)
+    const ls = planLessonsOn(iso, cid);
+    return ls.length || untisCals().length ? untisApply(iso, cid, ls) : ls;
+  }
+  function planLessonsOn(iso, cid = null) {
     if (freeReason(iso)) return [];
     const swaps = live(S.data.events).filter(e => e.type === 'tausch' && e.date === iso && S.data.classes[e.toClassId] && !S.data.classes[e.toClassId].deleted);
     if (swaps.length) {
@@ -429,6 +433,106 @@
     }
     return out.sort((a, b) => a.from - b.from || collator.compare(a.cls.name, b.cls.name));
   }
+  /* ---------- WebUntis: Abgleich mit dem eigenen Stundenplan ----------
+     Jede Untis-Stunde wird mit dem Stundenplan im Notenheft verglichen:
+     · passt sie zu einer eigenen Stunde → Raum übernehmen (Raumänderung sichtbar)
+     · kehrt sie Woche für Woche wieder, steht aber nicht im Plan (Aufsicht, Bereitschaft …) → ignorieren
+     · sonst ist sie neu: für einen eigenen Kurs als zusätzliche Stunde, sonst als Vertretung („fremd“).
+     Entfall wird beim Import als Ausfall eingetragen (kmCalApply). */
+  const untisCals = () => live(S.data?.calendars).filter(c => c.art === 'untis');
+  const untisToks = s => String(s || '').toLowerCase().split(/[^0-9a-zäöüß]+/).filter(Boolean).map(normCls);
+  const untisKey = t => `${wdOf(t.start.slice(0, 10))}|${t.start.slice(11, 16)}|${untisToks(t.titel).join(' ')}`;
+  const normRoom = s => String(s || '').toLowerCase().replace(/raum/g, '').replace(/^\s*r(?=\s*\d)/, '').replace(/[^0-9a-zäöüß]/g, '');
+  const UNTIS_FREI = ['ber', 'bereitschaft'];
+  let untisCache = null;
+  function untisData() {
+    if (untisCache) return untisCache;
+    const byDate = new Map(), seen = new Map(), regular = new Set();
+    const t0 = todayISO(), alt = addDaysISO(t0, -120);
+    for (const c of untisCals()) {
+      for (const [k, d] of Object.entries(c.regel || {})) if (d >= alt) regular.add(k);
+      for (const t of c.termine || []) {
+        if (t.ganztags || !t.start.includes('T')) continue;
+        const d = t.start.slice(0, 10);
+        if (!byDate.has(d)) byDate.set(d, []);
+        byDate.get(d).push(t);
+        const k = untisKey(t);
+        if (!seen.has(k)) seen.set(k, new Set());
+        seen.get(k).add(d);
+      }
+    }
+    for (const [k, ds] of seen) if (ds.size > 1) regular.add(k);
+    untisCache = { byDate, regular, days: new Map() };
+    return untisCache;
+  }
+  function untisRegelKeys(termine) { // Untis-Stunden, die im Zeitraum mehrfach am selben Wochentag zur selben Zeit vorkommen
+    const seen = new Map();
+    for (const t of termine) if (!t.ganztags && t.start.includes('T')) { const k = untisKey(t); if (!seen.has(k)) seen.set(k, new Set()); seen.get(k).add(t.start.slice(0, 10)); }
+    return [...seen].filter(([, ds]) => ds.size > 1).map(([k, ds]) => [k, [...ds].sort().pop()]);
+  }
+  function periodAt(time, isEnd = false) {
+    const P = periods(), m = timeToMin(time);
+    let i = P.findIndex(p => (isEnd ? p.end : p.start) === time);
+    if (i < 0) i = P.findIndex(p => Math.abs(timeToMin(isEnd ? p.end || p.start : p.start) - m) <= 5);
+    return i < 0 ? null : i + 1;
+  }
+  const subjFits = (c, toks) => {
+    const s = String(c.subject || '').toLowerCase(); if (!s) return false;
+    const ini = s.split(/[^a-zäöüß]+/).filter(Boolean).map(w => w[0]).join(''), flat = s.replace(/[^a-zäöüß]/g, '');
+    return toks.some(t => /^[a-zäöüß]{1,4}$/.test(t) && (flat.startsWith(t) || ini === t));
+  };
+  function untisOwn(toks) { // eigene Kurse, deren Name im Untis-Titel steht (bei mehreren: passendes Fach)
+    const cs = classesSorted().filter(c => { const n = untisToks(c.name); return n.length && n.every(x => toks.includes(x)); });
+    if (cs.length < 2) return cs;
+    const f = cs.filter(c => subjFits(c, toks));
+    return f.length ? f : cs;
+  }
+  function untisDay(iso) {
+    const U = untisData();
+    if (U.days.has(iso)) return U.days.get(iso);
+    const res = { plan: [], eigen: [], fremd: [], handled: new Set() };
+    U.days.set(iso, res);
+    const raw = (U.byDate.get(iso) || []).filter(t => !t.entfall).sort((a, b) => a.start.localeCompare(b.start));
+    if (!raw.length || freeReason(iso)) return res;
+    const base = planLessonsOn(iso, null);
+    for (const t of raw) {
+      const time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16), toks = untisToks(t.titel);
+      const from = periodAt(time), to = Math.max(from || 0, periodAt(endT, true) || from || 0) || null;
+      const own = untisOwn(toks), regular = U.regular.has(untisKey(t));
+      const pl = base.find(l => l.start <= time && time < l.end);
+      if (pl && (regular || own.some(c => c.id === pl.cls.id))) { res.plan.push({ id: t.id, cls: pl.cls, time, ort: t.ort }); res.handled.add(t.id); continue; }
+      if (regular || toks.some(x => UNTIS_FREI.includes(x)) && toks.length === 1) { res.handled.add(t.id); continue; }
+      if (!from) continue; // ohne Stundenraster (z. B. Aufsicht) bleibt es ein Kalendereintrag
+      const x = { id: t.id, from, to, start: periodTimes(from, to).start, end: periodTimes(from, to).end, titel: t.titel, ort: t.ort, cls: own.length === 1 ? own[0] : null };
+      const list = x.cls ? res.eigen : res.fremd, prev = list[list.length - 1];
+      res.handled.add(t.id);
+      if (prev && prev.to + 1 === from && (x.cls ? prev.cls === x.cls : prev.titel === x.titel) && normRoom(prev.ort) === normRoom(x.ort)) { prev.to = to; prev.end = x.end; continue; }
+      list.push(x);
+    }
+    return res;
+  }
+  function untisApply(iso, cid, ls) {
+    if (!untisCals().length) return ls;
+    const u = untisDay(iso);
+    for (const p of u.plan) {
+      const l = ls.find(x => x.cls.id === p.cls.id && x.start <= p.time && p.time < x.end && !x.away);
+      if (!l || !p.ort || normRoom(p.ort) === normRoom(l.room)) continue;
+      if (l.room) l.roomOld = l.room;
+      l.room = p.ort;
+    }
+    let add = false;
+    for (const e of u.eigen) {
+      if (cid && e.cls.id !== cid) continue;
+      if (ls.some(l => l.cls.id === e.cls.id && l.from <= e.to && e.from <= l.to)) continue;
+      ls.push({ cls: e.cls, date: iso, from: e.from, to: e.to, hours: e.to - e.from + 1, room: e.ort || e.cls.room || '', start: e.start, end: e.end,
+        cancelled: null, ausfall: null, untis: e.titel || 'neu' });
+      add = true;
+    }
+    return add ? ls.sort((a, b) => a.from - b.from || collator.compare(a.cls.name, b.cls.name)) : ls;
+  }
+  // Vertretungen ohne eigenen Kurs: als Stunde im Plan (nicht anklickbar für Noten)
+  const untisFremd = iso => !untisCals().length || freeReason(iso) ? [] : untisDay(iso).fremd.map(x => ({ ...x, date: iso, hours: x.to - x.from + 1, fremd: true }));
+  const roomHtml = l => l.roomOld ? `<b class="room-chg" title="Raumänderung laut WebUntis">${esc(l.room)}</b> statt ${esc(l.roomOld)}` : esc(l.room);
   function lessonsBetween(cid, fromIso, toIso) {
     const out = [];
     if (!fromIso || !toIso || fromIso > toIso) return out;
@@ -691,7 +795,7 @@
     return persistChain;
   }
   function commit(fn, { sync = true } = {}) {
-    entCache.src = null;
+    entCache.src = null; untisCache = null;
     fn(S.data);
     hydrateNames();
     render();
@@ -1372,7 +1476,7 @@
   }
   function renderInner() {
     const app = $('#app');
-    entCache.src = null;
+    entCache.src = null; untisCache = null;
     if (!S.data) {
       navReset();
       document.body.classList.add('locked');
@@ -1539,6 +1643,15 @@
       <span class="ev-main"><strong>${esc(evTitle(e))}</strong>${clsChip(c)}${e.type === 'tausch' ? `<small>${swapText(e)}${e.note ? ' · ' + esc(e.note) : ''}</small>` : e.note ? `<small>${esc(e.note)}</small>` : ''}</span>
       ${right}</button>`;
   }
+  function fremdCard(x) { // Vertretung laut WebUntis (kein eigener Kurs)
+    const running = lessonRunning(x), past = !running && lessonStarted(x) && x.date === todayISO();
+    return `<div class="lrow untis-fremd ${running ? 'running' : ''} ${past ? 'past' : ''}">
+      <span class="lr-time"><b>${esc(x.start)}</b><small>${esc(x.end)}</small></span>
+      <span class="lr-bar"></span>
+      <span class="lr-main"><span class="lr-title"><b>${esc(x.titel || 'Stunde')}</b> <span class="lr-swap untis">Vertretung · Untis</span>${running ? ' <span class="lr-now">jetzt</span>' : ''}</span>
+        <small>${pLabel(x.from, x.to)}${x.ort ? ' · ' + esc(x.ort) : ''}</small></span>
+    </div>`;
+  }
   function lessonCard(l, { compact = false, showDate = false } = {}) {
     const c = l.cls;
     const examToday = eventsOn(l.date).find(e => e.type === 'pruefung' && e.classId === c.id);
@@ -1555,8 +1668,8 @@
         data-action="lessonSheet" data-cid="${c.id}" data-date="${l.date}" data-from="${l.from}">
       <span class="lr-time">${showDate ? `<b>${WD[wdOf(l.date)]}</b><small>${fmtISO(l.date)}</small>` : `<b>${esc(l.start)}</b><small>${esc(l.end)}</small>`}</span>
       <span class="lr-bar"></span>
-      <span class="lr-main"><span class="lr-title"><b>${esc(c.name)}</b> ${esc(c.subject || '')}${l.swapIn ? ` <span class="lr-swap">${icon('swap')}statt ${esc(swapName(l.swapFrom, c))}</span>` : ''}${running ? ' <span class="lr-now">jetzt</span>' : ''}</span>
-        <small>${pLabel(l.from, l.to)}${l.hours > 1 ? ' · Doppelstunde' : ''}${l.room ? ' · ' + esc(l.room) : ''}${l.away ? ` · stattdessen ${esc(S.data.classes[l.away.toClassId]?.subject || '')}` : l.cancelled && l.cancelled !== true ? ' · ' + esc(l.cancelled) : ''}</small></span>
+      <span class="lr-main"><span class="lr-title"><b>${esc(c.name)}</b> ${esc(c.subject || '')}${l.swapIn ? ` <span class="lr-swap">${icon('swap')}statt ${esc(swapName(l.swapFrom, c))}</span>` : ''}${l.untis ? ' <span class="lr-swap untis">zusätzlich · Untis</span>' : ''}${running ? ' <span class="lr-now">jetzt</span>' : ''}</span>
+        <small>${pLabel(l.from, l.to)}${l.hours > 1 ? ' · Doppelstunde' : ''}${l.room ? ' · ' + roomHtml(l) : ''}${l.away ? ` · stattdessen ${esc(S.data.classes[l.away.toClassId]?.subject || '')}` : l.cancelled && l.cancelled !== true ? ' · ' + esc(l.cancelled) : ''}</small></span>
       ${badge}
     </button>`;
   }
@@ -1747,17 +1860,23 @@
     if (!cs.length) return html + noCourses();
     const ls = lessonsOn(t).filter(l => !l.away && !l.cancelled);
     const cur = ls.find(l => lessonRunning(l)) || ls.find(l => !lessonStarted(l));
-    if (cur) {
+    const fr = untisFremd(t).find(x => lessonRunning(x) || !lessonStarted(x));
+    if (fr && (!cur || fr.from < cur.from && !lessonRunning(cur))) {
+      html += `<div class="start-now untis-fremd"><span class="sn-k">${lessonRunning(fr) ? 'Jetzt' : `Als Nächstes · ${esc(fr.start)} Uhr`} · Vertretung laut Untis</span>
+        <b>${esc(fr.titel || 'Stunde')}</b><small>${pLabel(fr.from, fr.to)}${fr.ort ? ' · ' + esc(fr.ort) : ''}</small></div>`;
+    } else if (cur) {
       const run = lessonRunning(cur);
       html += `<button type="button" class="start-now" ${ccStyle(cur.cls)} data-action="lessonSheet" data-cid="${cur.cls.id}" data-date="${t}" data-from="${cur.from}">
         <span class="sn-k">${run ? 'Jetzt' : `Als Nächstes · ${esc(cur.start)} Uhr`}</span>
         <b>${esc(cur.cls.name)} <span>${esc(cur.cls.subject || '')}</span></b>
-        <small>${pLabel(cur.from, cur.to)}${cur.room ? ' · ' + esc(cur.room) : ''}${cur.swapIn ? ' · Tausch' : ''}</small></button>`;
+        <small>${pLabel(cur.from, cur.to)}${cur.room ? ' · ' + roomHtml(cur) : ''}${cur.swapIn ? ' · Tausch' : ''}${cur.untis ? ' · zusätzlich laut Untis' : ''}</small></button>`;
     } else {
       const d = addDaysISO(t, 1); // erst am Vortag zeigen
-      const nl = lessonsOn(d).find(l => !l.away && !l.cancelled);
+      const nl0 = lessonsOn(d).find(l => !l.away && !l.cancelled), nf = untisFremd(d)[0];
+      const nl = nf && (!nl0 || nf.from < nl0.from) ? nf : nl0;
+      const nlName = !nl ? '' : nl.fremd ? `${esc(nl.titel || 'Stunde')} <span>Vertretung laut Untis</span>` : `${esc(nl.cls.name)} <span>${esc(nl.cls.subject || '')}</span>`;
       html += `<div class="start-now calm"><span class="sn-k">${ls.length ? 'Heute kein Unterricht mehr' : free ? esc(free) : 'Heute kein Unterricht'}</span>
-        ${nl ? `<b>${diffDays(t, d) === 1 ? 'Morgen' : `${WD_LONG[wdOf(d)]}, ${fmtISO(d)}`}: ${esc(nl.cls.name)} <span>${esc(nl.cls.subject || '')}</span></b><small>${esc(nl.start)} Uhr · ${pLabel(nl.from, nl.to)}</small>` : ''}</div>`;
+        ${nl ? `<b>${diffDays(t, d) === 1 ? 'Morgen' : `${WD_LONG[wdOf(d)]}, ${fmtISO(d)}`}: ${nlName}</b><small>${esc(nl.start)} Uhr · ${pLabel(nl.from, nl.to)}${nl.fremd ? (nl.ort ? ' · ' + esc(nl.ort) : '') : nl.room ? ' · ' + roomHtml(nl) : ''}</small>` : ''}</div>`;
     }
     // Nur Aktionen, die jetzt wirklich möglich bzw. sinnvoll sind
     const ws = weekKey(t), we = addDaysISO(ws, 6);
@@ -1907,7 +2026,7 @@
   }
   function heuteGlance(d) {
     const t = todayISO(), isToday = d === t, free = freeReason(d);
-    const ls = lessonsOn(d).filter(l => !l.away);
+    const ls = lessonsOn(d).filter(l => !l.away).concat(untisFremd(d));
     const upcoming = ls.filter(l => !(isToday && lessonStarted(l) && !lessonRunning(l)));
     const hoursLeft = sum(upcoming.filter(l => !l.cancelled).map(l => l.hours));
     const n = heuteCounts(d), tds = todosHeute(d);
@@ -1934,7 +2053,7 @@
   function heuteBody(d, opts = {}) {
     const t = todayISO();
     const isToday = d === t;
-    const ls = lessonsOn(d).filter(l => !l.away);
+    const ls = lessonsOn(d).filter(l => !l.away).concat(untisFremd(d)).sort((a, b) => a.from - b.from);
     const free = freeReason(d);
     const over = l => isToday && lessonStarted(l) && !lessonRunning(l);
     const upcoming = ls.filter(l => !over(l)), past = ls.filter(over);
@@ -1961,7 +2080,7 @@
         let lastTo = null;
         for (const l of shown) {
           if (lastTo != null && l.from > lastTo + 1) html += `<div class="lgap">${l.from - lastTo - 1 === 1 ? `${lastTo + 1}. Stunde frei` : `${lastTo + 1}.–${l.from - 1}. Stunde frei`}</div>`;
-          html += lessonCard(l);
+          html += l.fremd ? fremdCard(l) : lessonCard(l);
           lastTo = Math.max(lastTo ?? 0, l.to);
         }
         html += '</div>';
@@ -2043,9 +2162,14 @@
         cells += `<button type="button" class="pg-lesson ${l.cancelled ? 'cancelled' : ''} ${lessonRunning(l) && !l.cancelled ? 'running' : ''}"
           style="--cc:${esc(clsColor(l.cls))};grid-column:${i + 2};grid-row:${l.from + 1} / ${Math.min(l.to, maxP) + 2}"
           data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}" title="${esc(clsLabel(l.cls))}${l.cancelled ? ' – fällt aus: ' + esc(l.cancelled) : ''}">
-          <strong>${esc(l.cls.name)}</strong><span class="pg-subj">${esc(l.cls.subject || '')}</span>${l.room ? `<span class="pg-room">${esc(l.room)}</span>` : ''}
-          ${exam ? `<span class="pg-flag">${icon('exam')}</span>` : l.swapIn ? `<span class="pg-flag swap" title="Tausch: statt ${esc(swapName(l.swapFrom, l.cls))}">${icon('swap')}</span>` : ''}${l.cancelled ? `<span class="pg-x">entfällt${l.cancelled !== 'Ausfall' ? ': ' + esc(l.cancelled) : ''}</span>` : ''}
+          <strong>${esc(l.cls.name)}</strong><span class="pg-subj">${esc(l.cls.subject || '')}</span>${l.room ? `<span class="pg-room${l.roomOld ? ' chg' : ''}"${l.roomOld ? ` title="Raumänderung laut WebUntis, sonst ${esc(l.roomOld)}"` : ''}>${esc(l.room)}</span>` : ''}
+          ${l.untis ? `<span class="pg-flag untis" title="zusätzliche Stunde laut WebUntis">neu</span>` : exam ? `<span class="pg-flag">${icon('exam')}</span>` : l.swapIn ? `<span class="pg-flag swap" title="Tausch: statt ${esc(swapName(l.swapFrom, l.cls))}">${icon('swap')}</span>` : ''}${l.cancelled ? `<span class="pg-x">entfällt${l.cancelled !== 'Ausfall' ? ': ' + esc(l.cancelled) : ''}</span>` : ''}
         </button>`;
+      }
+      for (const x of untisFremd(d)) {
+        if (x.from > maxP) continue;
+        cells += `<div class="pg-lesson untis-fremd ${lessonRunning(x) ? 'running' : ''}" style="grid-column:${i + 2};grid-row:${x.from + 1} / ${Math.min(x.to, maxP) + 2}" title="Vertretung laut WebUntis: ${esc(x.titel)}">
+          <strong>${esc(x.titel || 'Stunde')}</strong><span class="pg-subj">Vertretung</span>${x.ort ? `<span class="pg-room">${esc(x.ort)}</span>` : ''}<span class="pg-flag untis">neu</span></div>`;
       }
     });
     return `<div class="plan-wrap"><div class="plan-grid" style="grid-template-rows:auto repeat(${maxP}, minmax(46px, auto))">${cells}</div></div>`;
@@ -2055,7 +2179,7 @@
     return `<div class="agenda">${[0, 1, 2, 3, 4].map(i => {
       const d = addDaysISO(w0iso, i);
       const free = freeReason(d);
-      const ls = lessonsOn(d).filter(l => !l.away);
+      const ls = lessonsOn(d).filter(l => !l.away), fr = untisFremd(d);
       const evs = eventsOn(d).filter(e => (e.type !== 'ausfall' || !e.classId) && e.type !== 'tausch');
       return `<div class="ag-day ${d === t ? 'today' : ''}">
         <button type="button" class="ag-head" data-action="dayGo" data-date="${d}"><b>${WD_LONG[i]}</b><span>${fmtISO(d)}</span>${d === t ? '<span class="pill now" style="--cc:var(--accent)">heute</span>' : ''}</button>
@@ -2063,10 +2187,12 @@
         ${evs.map(e => `<button type="button" class="ag-row ev" data-action="editEvent" data-eid="${e.id}">${picto(e.type, 'sm')}<span><b>${esc(evTitle(e))}</b> ${e.classId ? esc(clsLabel(S.data.classes[e.classId])) : ''}${e.note ? ` – ${esc(e.note)}` : ''}</span></button>`).join('')}
         ${ls.map(l => `<button type="button" class="ag-row ${l.cancelled ? 'cancelled' : ''}" ${ccStyle(l.cls)} data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}">
           <span class="ag-time">${esc(l.start)}</span><span class="ag-bar"></span>
-          <span class="ag-txt"><b>${esc(l.cls.name)}</b> ${esc(l.cls.subject || '')} <small>${pLabel(l.from, l.to)}${l.room ? ' · ' + esc(l.room) : ''}</small></span>
-          ${l.cancelled ? `<span class="ag-tag x">${icon('ban')}entfällt</span>` : eventsOn(d).some(e => e.type === 'pruefung' && e.classId === l.cls.id) ? `<span class="ag-tag e">${icon('exam')}Prüfung</span>` : l.swapIn ? `<span class="ag-tag s">${icon('swap')}statt ${esc(swapName(l.swapFrom, l.cls))}</span>` : ''}
+          <span class="ag-txt"><b>${esc(l.cls.name)}</b> ${esc(l.cls.subject || '')} <small>${pLabel(l.from, l.to)}${l.room ? ' · ' + roomHtml(l) : ''}</small></span>
+          ${l.untis ? `<span class="ag-tag u">neu · Untis</span>` : ''}${l.cancelled ? `<span class="ag-tag x">${icon('ban')}entfällt</span>` : eventsOn(d).some(e => e.type === 'pruefung' && e.classId === l.cls.id) ? `<span class="ag-tag e">${icon('exam')}Prüfung</span>` : l.swapIn ? `<span class="ag-tag s">${icon('swap')}statt ${esc(swapName(l.swapFrom, l.cls))}</span>` : ''}
         </button>`).join('')}
-        ${!free && !ls.length && !evs.length ? '<div class="ag-free muted">kein Unterricht</div>' : ''}
+        ${fr.map(x => `<div class="ag-row untis-fremd"><span class="ag-time">${esc(x.start)}</span><span class="ag-bar"></span>
+          <span class="ag-txt"><b>${esc(x.titel || 'Stunde')}</b> <small>${pLabel(x.from, x.to)}${x.ort ? ' · ' + esc(x.ort) : ''}</small></span><span class="ag-tag u">Vertretung · Untis</span></div>`).join('')}
+        ${!free && !ls.length && !fr.length && !evs.length ? '<div class="ag-free muted">kein Unterricht</div>' : ''}
       </div>`;
     }).join('')}</div>`;
   }
@@ -3211,17 +3337,32 @@
     if (old && !old.deleted && (old.updatedAt || 0) >= p.stand) return { n: 0, aus: 0 };
     let aus = 0;
     commit(d => {
-      d.calendars[p.quelle] = { id: p.quelle, name: p.name, art: p.art, stand: p.stand, termine: p.termine, updatedAt: p.stand };
+      const cal = { id: p.quelle, name: p.name, art: p.art, stand: p.stand, termine: p.termine, updatedAt: p.stand };
+      d.calendars[p.quelle] = cal;
       if (p.art !== 'untis') return;
+      // Untis-Stunden, die Woche für Woche wiederkehren, merken (so fallen sie auch vor Ferien nicht als „neu“ auf)
+      const alt = addDaysISO(todayISO(), -120), regel = {};
+      for (const [k, v] of Object.entries(old?.regel || {})) if (v >= alt) regel[k] = v;
+      for (const [k, v] of untisRegelKeys(p.termine)) if (!regel[k] || regel[k] < v) regel[k] = v;
+      cal.regel = regel;
+      untisCache = null;
       // WebUntis: Entfall einer eigenen Stunde → Ausfall für diesen Kurs (eine Löschung im Notenheft bleibt bestehen)
+      const aktiv = new Set();
       for (const t of p.termine.filter(x => x.entfall && !x.ganztags)) {
         const date = t.start.slice(0, 10), time = t.start.slice(11, 16);
-        for (const l of lessonsOn(date).filter(x => !x.away && x.start === time)) {
+        for (const l of planLessonsOn(date).filter(x => !x.away && x.start <= time && time < x.end)) {
           const id = 'untis-' + t.id + '-' + l.cls.id, prev = d.events[id];
-          if (prev) continue;
+          aktiv.add(id);
+          if (prev && !prev.revoked) continue;
           d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date, note: 'Entfall laut WebUntis', updatedAt: p.stand };
           aus++;
         }
+      }
+      // Entfall in Untis zurückgenommen → automatisch eingetragenen Ausfall wieder entfernen
+      const ds = p.termine.map(t => t.start.slice(0, 10)).sort(), bis = ds[ds.length - 1] || '', heute = todayISO();
+      for (const e of Object.values(d.events)) {
+        if (e.deleted || !e.id.startsWith('untis-') || e.note !== 'Entfall laut WebUntis' || aktiv.has(e.id) || e.date < heute || e.date > bis) continue;
+        d.events[e.id] = Object.assign({}, e, { deleted: true, revoked: true, updatedAt: p.stand });
       }
     });
     return { n: p.termine.length, aus };
@@ -3241,13 +3382,17 @@
     for (const c of live(S.data.calendars)) for (const t of c.termine || []) {
       if (iso < t.start.slice(0, 10) || iso > t.ende.slice(0, 10)) continue;
       if (!alle && calDone(t)) continue;
-      if (c.art === 'untis' && (t.entfall || t.ganztags || !t.aenderung)) continue; // nur ausdrücklich gekennzeichnete Vertretungen/Verlegungen
+      if (c.art === 'untis') { // Untis-Stunden stehen im Stundenplan; hier nur, was sich keiner Stunde zuordnen lässt
+        if (t.entfall || t.ganztags) continue;
+        const u = untisDay(t.start.slice(0, 10));
+        if (u.handled.has(t.id) || freeReason(t.start.slice(0, 10)) && !t.aenderung) continue;
+      }
       if (calHidden(t)) continue;
       out.push(Object.assign({}, t, { art: c.art === 'privat' ? 'privat' : 'schule', untis: c.art === 'untis' }));
     }
     return out.sort((a, b) => (a.ganztags ? '0' : '1' + a.start).localeCompare(b.ganztags ? '0' : '1' + b.start));
   }
-  const calLi = t => `<li class="cal-li ${t.art}"><i class="cal-dot"></i><span><b>${calTime(t)}</b> ${t.untis ? 'Vertretung: ' : ''}${esc(t.titel || 'Termin')}${t.ort ? ` <small class="muted">· ${esc(t.ort)}</small>` : ''}</span></li>`;
+  const calLi = t => `<li class="cal-li ${t.art}"><i class="cal-dot"></i><span><b>${calTime(t)}</b> ${t.untis ? 'Untis: ' : ''}${esc(t.titel || 'Termin')}${t.ort ? ` <small class="muted">· ${esc(t.ort)}</small>` : ''}</span></li>`;
   function calRow(t, iso) {
     const von = t.ganztags ? 'ganztägig' : `${t.start.slice(11, 16)}–${t.ende.slice(11, 16)} Uhr`;
     const tage = t.start.slice(0, 10) !== t.ende.slice(0, 10) ? ` · bis ${fmtISO(t.ende.slice(0, 10), true)}` : '';
@@ -5162,5 +5307,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, calDone, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
 })();

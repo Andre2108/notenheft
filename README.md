@@ -1,6 +1,13 @@
-# Notenheft 6.4 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.4.3 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.4.3 – WebUntis-Änderungen im Stundenplan
+
+- **Neue Stunden** (z. B. in einer Bereitschaft) erscheinen direkt im Stundenplan, in Heute und als „Morgen: …“. Für einen eigenen Kurs wird sie zur normalen Stunde (Noten eintragen möglich, Markierung „neu“); für eine fremde Klasse steht sie orange als **Vertretung** da.
+- **Raumänderungen:** Der neue Raum steht an der Stunde, hervorgehoben mit „statt R …“.
+- **Entfall** wird wie bisher als Ausfall eingetragen – jetzt auch für die zweite Stunde einer Doppelstunde. Nimmt Untis den Entfall zurück, verschwindet der Ausfall wieder.
+- Erkannt wird das durch den Vergleich mit dem eigenen Stundenplan: Was in Untis Woche für Woche gleich wiederkehrt (Aufsichten, Bereitschaft, Gottesdienst …), bleibt ausgeblendet.
 
 ## Neu in Version 6.4 – Ganzjahresplanung automatisch
 
