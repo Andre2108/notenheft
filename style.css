@@ -1366,7 +1366,23 @@ html, body { touch-action: manipulation; }
 .untis-fremd { --cc: var(--warn); }
 .pg-lesson.untis-fremd { border-left-style: dashed; }
 .lr-swap.untis, .ag-tag.u { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
-.pg-flag.untis { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: var(--warn); }
-.pg-room.chg { opacity: 1; font-weight: 800; color: var(--warn); }
+.pg-flag.untis { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: var(--warn); background: #fff; border-radius: 6px; padding: 1px 5px; }
+.pg-room.chg { opacity: 1; font-weight: 800; color: var(--warn); background: #fff; border-radius: 5px; padding: 0 4px; }
 .room-chg { color: var(--warn); font-weight: 800; }
 .start-now.untis-fremd { background: color-mix(in srgb, var(--warn) 84%, #111827); }
+
+/* 6.5 – Mehrarbeit */
+.ma-row { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); padding-left: 12px; cursor: pointer; }
+.ma-row:last-child { border-bottom: 0; }
+.ma-row.off .ma-main { opacity: .5; }
+.ma-chk { display: flex; align-items: center; }
+.ma-chk input { width: 20px; height: 20px; accent-color: var(--accent); }
+.ma-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none; text-align: left; padding: 11px 14px 11px 8px; color: var(--text); }
+.ma-main .ev-right b { font-size: 17px; }
+.ma-miss { color: var(--warn); }
+.ma-hint { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 10px 14px; margin: 10px 0; border-radius: 14px; background: color-mix(in srgb, var(--warn) 10%, var(--card)); }
+.ma-hint span { flex: 1; }
+.ma-hint .i { color: var(--warn); flex: none; }
+.ma-note { margin: 6px 2px 0; }
+.ma-text { width: 100%; font: 13px/1.4 ui-monospace, monospace; }
+.planer-seg { overflow-x: auto; }

@@ -1,6 +1,16 @@
-# Notenheft 6.4.3 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.5 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.5 – Mehrarbeit
+
+- **Planer → Mehrarbeit** (neuer Reiter): je Kalendermonat alle Vertretungen und zusätzlichen Stunden aus WebUntis – mit Datum, Stunde, Klasse, Fach, Raum und „in der Bereitschaft“. Gespeichert wird ab November 2026 dauerhaft (auch nachdem Untis die Stunde nicht mehr liefert).
+- **Vertretene Lehrkraft:** Das durchgestrichene Kürzel steht nicht im Untis-Kalender. Vertretung antippen (im Stundenplan, in Heute oder unter Mehrarbeit) und das Kürzel eintragen; fehlende Kürzel werden angezeigt.
+- **Ausgefallene Stunden** des Monats stehen darunter. Haken = „ersatzlos, ohne Schulgeschäft“ → wird gegengerechnet. Ohne Haken zählt der Ausfall nicht.
+- **Verrechnet** = Mehrarbeit − ersatzlos ausgefallen; ab **4 Stunden** im Monat: „Antrag möglich“. Die Liste lässt sich für den Antrag kopieren (Formular folgt).
+- Einzelne Stunden lassen sich abwählen („zählt als Mehrarbeit“), bearbeiten, löschen oder von Hand nachtragen.
+- Nach Ende des Schuljahres fragt das Notenheft, ob die alten Einträge gelöscht werden können.
+- **Untis genauer:** Klasse(n) werden aus Untis gelesen (z. B. „E · 09b“), Vertretungen stehen in der Tagesliste in der richtigen Reihenfolge, Raumänderungen auch je Einzelstunde („R 311 / R 323 statt R 322“), abweichende Untis-Zeiten (z. B. dienstags) werden dem Stundenraster zugeordnet. Fehlt eine wöchentliche Stunde einmalig in Untis, wird sie als Ausfall eingetragen.
 
 ## Neu in Version 6.4.3 – WebUntis-Änderungen im Stundenplan
 
