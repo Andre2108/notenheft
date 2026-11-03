@@ -1399,3 +1399,7 @@ html, body { touch-action: manipulation; }
 .untis-fremd.regel { --cc: #64748b; }
 .start-now.untis-fremd.regel { background: color-mix(in srgb, #64748b 84%, #111827); }
 .ma-head.regel { background: var(--card-2); border-left-color: #64748b; }
+.ma-row.aus { cursor: default; }
+.ma-grund { flex-basis: 100%; margin-top: 4px; font-size: 13px; padding: 5px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); max-width: 100%; }
+.ma-grund.ersatzlos { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+.ma-grund.krank { border-color: var(--pc-aus, #d9463b); color: var(--pc-aus, #d9463b); font-weight: 650; }

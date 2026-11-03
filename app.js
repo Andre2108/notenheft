@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.5.1';
+  const APP_VERSION = '6.5.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -464,6 +464,14 @@
   const normRoom = s => String(s || '').toLowerCase().replace(/raum/g, '').replace(/^\s*r(?=\s*\d)/, '').replace(/[^0-9a-zäöüß]/g, '');
   const tmin = s => timeToMin(String(s).slice(-5));
   const overlapMin = (a1, a2, b1, b2) => Math.max(0, Math.min(tmin(a2), tmin(b2)) - Math.max(tmin(a1), tmin(b1)));
+  function untisMe(termine) { // eigenes Kürzel = das Kürzel, das in den meisten Untis-Einträgen steht (z. B. VSC)
+    const cnt = new Map(); let n = 0;
+    for (const t of termine || []) { const L = untisInfo(t).lehrer; if (!L.length) continue; n++; for (const x of L) cnt.set(x, (cnt.get(x) || 0) + 1); }
+    const top = [...cnt].sort((a, b) => b[1] - a[1])[0];
+    return top && top[1] * 2 >= n ? top[0] : null;
+  }
+  // Untis-Stunde, die nicht (mehr) von mir gehalten wird: andere Lehrkraft oder keine eingetragen
+  const untisNichtIch = (t, me) => !!me && t.info != null && !!t.titel && !isBer(t) && !untisInfo(t).lehrer.includes(me);
   let untisCache = null;
   function untisData() {
     if (untisCache) return untisCache;
@@ -482,7 +490,7 @@
       }
     }
     for (const [k, ds] of seen) if (ds.size > 1) regular.add(k);
-    untisCache = { byDate, regular, days: new Map() };
+    untisCache = { byDate, regular, days: new Map(), me: untisMe(untisCals().flatMap(c => c.termine || [])) };
     return untisCache;
   }
   function untisRegelKeys(termine) { // Untis-Stunden, die im Zeitraum mehrfach am selben Wochentag zur selben Zeit vorkommen
@@ -539,7 +547,7 @@
     const bers = all.filter(isBer), base = planLessonsOn(iso, null);
     for (const t of all) {
       if (t.entfall) continue;
-      if (isBer(t)) { res.handled.add(t.id); continue; }
+      if (isBer(t) || untisNichtIch(t, U.me)) { res.handled.add(t.id); continue; } // vertreten/entfallen: siehe Ausfall
       const time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16), info = untisInfo(t);
       const toks = untisToks(t.titel + ' ' + info.klassen.join(' '));
       const own = untisOwn(toks), regular = U.regular.has(untisKey(t));
@@ -3328,6 +3336,7 @@
         if (p.kalender) kmCalReport(kmCalApply(p), p); else kmReport(kmProcess(p), p);
       }
       if (kmRetryPending() || ch) { persistLocal(); softRender(); }
+      if (S.data) untisNeuAuswerten();
     } finally { kmRunning = false; }
   }
   async function kmShowCode() {
@@ -3418,6 +3427,49 @@
     }
     untisCache = null;
   }
+  // WebUntis auswerten: wöchentliche Stunden merken, Ausfälle eintragen bzw. zurücknehmen, Mehrarbeit speichern
+  function untisAuswerten(d, cal, stand, old = cal) {
+    const termine = cal.termine || [];
+    const alt = addDaysISO(todayISO(), -120), regel = {};
+    for (const [k, v] of Object.entries(old?.regel || {})) if (v >= alt) regel[k] = v;
+    for (const [k, v] of untisRegelKeys(termine)) if (!regel[k] || regel[k] < v) regel[k] = v;
+    cal.regel = regel;
+    untisCache = null;
+    // Ausfall: in Untis entfallen, einmalig fehlend oder von einer anderen Lehrkraft gehalten (z. B. weil ich krank bin)
+    const me = untisMe(termine), aktiv = new Set();
+    let aus = 0;
+    const kandidaten = termine.filter(x => x.entfall && !x.ganztags).concat(untisFehlend(termine))
+      .concat(termine.filter(x => !x.ganztags && !x.entfall && untisNichtIch(x, me)).map(x => ({ ...x, durch: untisInfo(x).lehrer })));
+    for (const t of kandidaten) {
+      const date = t.start.slice(0, 10), time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16);
+      const own = t.durch ? untisOwn(untisToks(t.titel + ' ' + untisInfo(t).klassen.join(' '))) : null;
+      for (const l of planLessonsOn(date).filter(x => !x.away && overlapMin(x.start, x.end, time, endT) > 0 && (!own || own.some(c => c.id === x.cls.id)))) {
+        const id = 'untis-' + t.id + '-' + l.cls.id, prev = d.events[id];
+        aktiv.add(id);
+        const note = t.durch ? (t.durch.length ? `Vertretung durch ${t.durch.join(', ')} (WebUntis)` : 'Entfall laut WebUntis (ohne Lehrkraft)') : 'Entfall laut WebUntis';
+        if (prev && !prev.revoked && !prev.deleted) continue;
+        if (prev && prev.deleted && !prev.revoked) continue; // vom Nutzer gelöscht
+        d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date, note, untis: true, updatedAt: stand };
+        aus++;
+      }
+    }
+    // Entfall in Untis zurückgenommen → automatisch eingetragenen Ausfall wieder entfernen
+    const ds = termine.map(t => t.start.slice(0, 10)).sort(), bis = ds[ds.length - 1] || '', heute = todayISO();
+    for (const e of Object.values(d.events)) {
+      if (e.deleted || !String(e.id).startsWith('untis-') || !(e.untis || e.note === 'Entfall laut WebUntis') || aktiv.has(e.id) || e.date < heute || e.date > bis) continue;
+      d.events[e.id] = Object.assign({}, e, { deleted: true, revoked: true, updatedAt: stand });
+    }
+    maSync(d, termine, stand);
+    cal.ausgewertet = APP_VERSION + '|' + todayISO();
+    return aus;
+  }
+  function untisNeuAuswerten() { // nach einem App-Update bzw. einmal am Tag, auch ohne neue Untis-Datei
+    const cal = untisCals()[0];
+    if (!cal || cal.ausgewertet === APP_VERSION + '|' + todayISO()) return;
+    let aus = 0;
+    commit(d => { const c = Object.assign({}, d.calendars[cal.id]); d.calendars[cal.id] = c; aus = untisAuswerten(d, c, now()); });
+    if (aus) toast(`WebUntis: ${plural(aus, 'Ausfall', 'Ausfälle')} eingetragen`, { ms: 5000 });
+  }
   function kmCalApply(p) {
     const old = S.data.calendars[p.quelle];
     if (old && !old.deleted && (old.updatedAt || 0) >= p.stand) return { n: 0, aus: 0 };
@@ -3426,31 +3478,7 @@
       const cal = { id: p.quelle, name: p.name, art: p.art, stand: p.stand, termine: p.termine, updatedAt: p.stand };
       d.calendars[p.quelle] = cal;
       if (p.art !== 'untis') return;
-      // Untis-Stunden, die Woche für Woche wiederkehren, merken (so fallen sie auch vor Ferien nicht als „neu“ auf)
-      const alt = addDaysISO(todayISO(), -120), regel = {};
-      for (const [k, v] of Object.entries(old?.regel || {})) if (v >= alt) regel[k] = v;
-      for (const [k, v] of untisRegelKeys(p.termine)) if (!regel[k] || regel[k] < v) regel[k] = v;
-      cal.regel = regel;
-      untisCache = null;
-      // WebUntis: Entfall einer eigenen Stunde → Ausfall für diesen Kurs (eine Löschung im Notenheft bleibt bestehen)
-      const aktiv = new Set();
-      for (const t of p.termine.filter(x => x.entfall && !x.ganztags).concat(untisFehlend(p.termine))) {
-        const date = t.start.slice(0, 10), time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16);
-        for (const l of planLessonsOn(date).filter(x => !x.away && overlapMin(x.start, x.end, time, endT) > 0)) {
-          const id = 'untis-' + t.id + '-' + l.cls.id, prev = d.events[id];
-          aktiv.add(id);
-          if (prev && !prev.revoked) continue;
-          d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date, note: 'Entfall laut WebUntis', updatedAt: p.stand };
-          aus++;
-        }
-      }
-      // Entfall in Untis zurückgenommen → automatisch eingetragenen Ausfall wieder entfernen
-      const ds = p.termine.map(t => t.start.slice(0, 10)).sort(), bis = ds[ds.length - 1] || '', heute = todayISO();
-      for (const e of Object.values(d.events)) {
-        if (e.deleted || !e.id.startsWith('untis-') || e.note !== 'Entfall laut WebUntis' || aktiv.has(e.id) || e.date < heute || e.date > bis) continue;
-        d.events[e.id] = Object.assign({}, e, { deleted: true, revoked: true, updatedAt: p.stand });
-      }
-      maSync(d, p.termine, p.stand);
+      aus = untisAuswerten(d, cal, p.stand, old);
     });
     return { n: p.termine.length, aus };
   }
@@ -3990,9 +4018,10 @@
     const from = ym + '-01', to = monthEnd(ym);
     const ma = maList().filter(m => m.date >= from && m.date <= to).sort((a, b) => a.date.localeCompare(b.date) || a.from - b.from);
     const aus = ausfallRows(from, to);
-    const plus = sum(ma.filter(m => m.zaehlt !== false).map(maHours)), minus = sum(aus.filter(r => r.ev.ersatzlos).map(r => r.hours));
+    const plus = sum(ma.filter(m => m.zaehlt !== false).map(maHours)), minus = sum(aus.filter(r => ausGrund(r.ev) === 'ersatzlos').map(r => r.hours));
     return { from, to, ma, aus, plus, minus, saldo: plus - minus, offen: ma.filter(m => m.zaehlt !== false && !maDone(m)).length, ohneKuerzel: ma.filter(m => m.zaehlt !== false && !m.fuer).length };
   }
+  const ausGrund = e => e.grund || (e.ersatzlos ? 'ersatzlos' : ''); // '' | 'ersatzlos' | 'krank'
   const maAlt = () => { const sy = termCfg().start; return maList().filter(m => m.date < sy); };
   function maText(ym) {
     const st = maMonthStats(ym);
@@ -4000,7 +4029,7 @@
     const lines = [`Mehrarbeit ${monthLabel(ym)}`, '', 'Datum\tStunde\tvertretene Lehrkraft\tKlasse\tFach\tStd.'];
     for (const m of z) lines.push(`${fmtISO(m.date, true)}\t${pLabel(m.from, m.to)}\t${m.fuer || '?'}\t${m.klassen || ''}\t${m.fach || ''}\t${maHours(m)}`);
     lines.push('', `Mehrarbeit: ${st.plus} Std.`);
-    const ers = st.aus.filter(r => r.ev.ersatzlos);
+    const ers = st.aus.filter(r => ausGrund(r.ev) === 'ersatzlos');
     if (ers.length) {
       lines.push('', 'Ersatzlos ausgefallen (gegengerechnet):');
       for (const r of ers) lines.push(`${fmtISO(r.date, true)}\t${r.ls.map(l => `${pLabel(l.from, l.to)} ${clsLabel(l.cls)}`).join(', ')}\t${r.ev.note || 'Ausfall'}\t${r.hours}`);
@@ -4039,12 +4068,14 @@
       : `<p class="empty-line">In diesem Monat keine Vertretungen${ym + '-01' < MA_START ? ' (gespeichert wird ab November 2026)' : ''}.</p>`;
     html += '</section>';
     // Ausfälle
-    html += `<section class="section"><div class="section-head"><h2>${picto('ausfall', 'sm')} Ausgefallene Stunden</h2><span class="muted small">Haken = ersatzlos, ohne Schulgeschäft</span></div>`;
-    html += st.aus.length ? `<div class="ev-list">${st.aus.map(r => `<label class="ma-row ${r.ev.ersatzlos ? '' : 'off'}">
-        <span class="ma-chk"><input type="checkbox" data-change="maErsatzlos" data-eid="${esc(r.ev.id)}" ${r.ev.ersatzlos ? 'checked' : ''}></span>
+    html += `<section class="section"><div class="section-head"><h2>${picto('ausfall', 'sm')} Ausgefallene Stunden</h2><button type="button" class="link" data-action="maKrank">${icon('plus')} Krank …</button></div>
+      <p class="muted small ma-note">Nur „ersatzlos, ohne Schulgeschäft“ wird gegengerechnet – Ausfälle wegen Krankheit nie.</p>`;
+    const GRUENDE = [['', 'nicht verrechnen'], ['ersatzlos', 'ersatzlos, ohne Schulgeschäft – verrechnen'], ['krank', 'krank – nicht verrechnen']];
+    html += st.aus.length ? `<div class="ev-list">${st.aus.map(r => { const g = ausGrund(r.ev); return `<div class="ma-row aus ${g === 'ersatzlos' ? '' : 'off'}">
         <span class="ma-main"><span class="ev-date"><b>${WD[wdOf(r.date)]}</b>${fmtISO(r.date)}</span>
-          <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${esc(r.ev.note || 'Ausfall')}${r.ev.ersatzlos ? ' · ersatzlos' : ''}</small></span>
-          <span class="ev-right"><b>${r.ev.ersatzlos ? '−' : ''}${r.hours}</b><small>Std.</small></span></span></label>`).join('')}</div>`
+          <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${esc(r.ev.note || 'Ausfall')}</small>
+            <select class="ma-grund ${g}" data-change="maGrund" data-eid="${esc(r.ev.id)}">${GRUENDE.map(([v, lab]) => `<option value="${v}" ${v === g ? 'selected' : ''}>${lab}</option>`).join('')}</select></span>
+          <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>Std.</small></span></span></div>`; }).join('')}</div>`
       : '<p class="empty-line">Keine ausgefallenen Stunden in diesem Monat.</p>';
     html += '</section>';
     html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Für den Antrag</h2></div>
@@ -5087,6 +5118,7 @@
     importXlsx(v, el) { const file = el.files && el.files[0]; el.value = ''; importPlanning(file); },
     tPast(v, el) { S.tPast = el.checked; render(); },
     maZaehlt(v, el) { const id = el.dataset.id; commit(d => { const m = d.mehrarbeit[id]; if (m) d.mehrarbeit[id] = Object.assign({}, m, { zaehlt: el.checked, updatedAt: now() }); }); },
+    maGrund(v, el) { const id = el.dataset.eid; commit(d => { const e = d.events[id]; if (e) d.events[id] = Object.assign({}, e, { grund: v, ersatzlos: v === 'ersatzlos', updatedAt: now() }); }); },
     maErsatzlos(v, el) { const id = el.dataset.eid; commit(d => { const e = d.events[id]; if (e) d.events[id] = Object.assign({}, e, { ersatzlos: el.checked, updatedAt: now() }); }); },
     importKA(v, el) { const file = el.files && el.files[0]; el.value = ''; importKA(file); },
     importKuerzel(v, el) { const file = el.files && el.files[0]; el.value = ''; importKuerzel(file); },
@@ -5156,6 +5188,26 @@
     },
     maOpen(d) { if (d.mid) { const m = S.data.mehrarbeit?.[d.mid]; if (m && !m.deleted) maEdit(m); } else maOpenUntis(d.uid, d.date); },
     maNew() { maEdit({}, { neu: true }); },
+    async maKrank() { // Krankheitstage: alle eigenen Stunden fallen aus, Grund „krank“ (nie verrechnet)
+      const t = todayISO();
+      const r = await openModal({ title: 'Krank', body: `<p class="muted small">Alle deine Stunden an diesen Tagen werden als ausgefallen eingetragen (Grund: krank). Sie werden nicht mit Mehrarbeit verrechnet.</p>
+        <div class="two-col"><label class="field"><span>von</span><input type="date" id="k-von" value="${t}"></label><label class="field"><span>bis</span><input type="date" id="k-bis" value="${t}"></label></div>`,
+        actions: [{ label: 'Abbrechen', value: null }, { label: 'Eintragen', cls: 'primary', run: root => { const a = root.querySelector('#k-von').value, b = root.querySelector('#k-bis').value || a; return a && b >= a ? [a, b] : (toast('Bitte die Tage prüfen.'), false); } }] });
+      if (!r) return;
+      let n = 0;
+      commit(d => {
+        for (let x = r[0]; x <= r[1]; x = addDaysISO(x, 1)) {
+          for (const e of Object.values(d.events)) if (!e.deleted && e.type === 'ausfall' && e.date === x) { d.events[e.id] = Object.assign({}, e, { grund: 'krank', ersatzlos: false, updatedAt: now() }); }
+          for (const l of lessonsOn(x)) {
+            if (l.away || l.ausfall) continue;
+            const id = `krank-${x}-${l.cls.id}`;
+            d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date: x, note: 'krank', grund: 'krank', updatedAt: now() };
+            n++;
+          }
+        }
+      });
+      toast(n ? `${plural(n, 'Stunde', 'Stunden')} als ausgefallen (krank) eingetragen` : 'Gespeichert: Grund „krank“');
+    },
     maMonth(d) {
       const ym = S.maMonth || todayISO().slice(0, 7), step = +d.step;
       S.maMonth = step ? toISO(new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + step, 1)).slice(0, 7) : null;

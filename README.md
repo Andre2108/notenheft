@@ -1,6 +1,13 @@
-# Notenheft 6.5.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.5.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.5.2 – Vertreten werden & krank
+
+- **Wirst du vertreten** (Untis trägt bei deiner Stunde eine andere Lehrkraft ein, z. B. „06c LAT“) oder steht gar keine Lehrkraft dabei, gilt die Stunde für dich als **ausgefallen** („Vertretung durch LAT“ bzw. „Entfall … ohne Lehrkraft“). Dein Kürzel erkennt das Notenheft selbst.
+- Untis wird nach einem Update und einmal täglich neu ausgewertet – auch wenn sich die Untis-Datei nicht geändert hat.
+- **Mehrarbeit → Ausgefallene Stunden:** je Ausfall ein Grund: „nicht verrechnen“ (Standard), „ersatzlos, ohne Schulgeschäft – verrechnen“ oder „krank – nicht verrechnen“. **Krankheit wird nie gegengerechnet.**
+- **„Krank …“**: Tage auswählen → alle deine Stunden dort fallen aus (Grund krank).
 
 ## Neu in Version 6.5.1
 
