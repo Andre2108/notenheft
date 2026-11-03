@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.5.2';
+  const APP_VERSION = '6.5.3';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -4075,7 +4075,7 @@
         <span class="ma-main"><span class="ev-date"><b>${WD[wdOf(r.date)]}</b>${fmtISO(r.date)}</span>
           <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${esc(r.ev.note || 'Ausfall')}</small>
             <select class="ma-grund ${g}" data-change="maGrund" data-eid="${esc(r.ev.id)}">${GRUENDE.map(([v, lab]) => `<option value="${v}" ${v === g ? 'selected' : ''}>${lab}</option>`).join('')}</select></span>
-          <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>Std.</small></span></span></div>`; }).join('')}</div>`
+          <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>${g === 'ersatzlos' ? 'Std.' : 'Std. · zählt nicht'}</small></span></span></div>`; }).join('')}</div>`
       : '<p class="empty-line">Keine ausgefallenen Stunden in diesem Monat.</p>';
     html += '</section>';
     html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Für den Antrag</h2></div>
