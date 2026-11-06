@@ -1,6 +1,15 @@
-# Notenheft 6.5.2 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.5.4 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.5.4 – Fehlerbehebungen
+
+- **Ausfälle stundengenau:** Entfällt laut WebUntis nur eine Stunde, bleibt der Rest des Tages und der Doppelstunde bestehen. Das gilt auch für „Stunde fällt aus“ beim Antippen einer Stunde. Mehrarbeit, Stundenzähler und Ganzjahresplanung rechnen entsprechend; bereits vergangene Einträge ohne Stundenangabe bleiben ganztägig.
+- **Mündliche Noten eintragen:** Ein von Hand abgehaktes To-do bleibt abgehakt.
+- **Nachschrift-To-do:** Wird „nicht mitgeschrieben“ entfernt, erledigt es sich.
+- **Abgleich:** Bei gleichem Zeitstempel kommen alle Geräte zum selben Ergebnis; keine unnötigen Uploads mehr.
+- **Kurs oder Kind löschen** entfernt auch die zugehörigen Arbeiten, Noten, To-dos und Vermerke.
+- **Handy:** Der Reiter „Mündlich“ passt wieder auf die Bildschirmbreite.
 
 ## Neu in Version 6.5.2 – Vertreten werden & krank
 

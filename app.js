@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.5.3';
+  const APP_VERSION = '6.5.4';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -331,15 +331,21 @@
   }
 
   // Zusammenführen: pro Datensatz gewinnt die neuere Änderung
+  // Gewinnt Datensatz b? Neuere Änderung; bei gleichem Zeitstempel entscheidet der Inhalt, damit alle Geräte dasselbe Ergebnis haben
+  function recWins(b, a) {
+    const tb = b?.updatedAt || 0, ta = a?.updatedAt || 0;
+    if (tb !== ta) return tb > ta;
+    return JSON.stringify(sortKeys(b)) > JSON.stringify(sortKeys(a));
+  }
   function mergeMaps(a, b) {
     const out = Object.assign({}, a);
     for (const [id, v] of Object.entries(b || {})) {
-      if (!out[id] || (v.updatedAt || 0) > (out[id].updatedAt || 0)) out[id] = v;
+      if (!out[id] || recWins(v, out[id])) out[id] = v;
     }
     return out;
   }
   function mergeData(a, b) {
-    const out = { schema: 3, settings: (b.settings?.updatedAt || 0) > (a.settings?.updatedAt || 0) ? b.settings : a.settings };
+    const out = { schema: 3, settings: recWins(b.settings, a.settings) ? b.settings : a.settings };
     for (const k of MAPS) out[k] = mergeMaps(a[k], b[k]);
     return out;
   }
@@ -384,8 +390,13 @@
     return { start: P[from - 1]?.start || '', end: P[to - 1]?.end || P[to - 1]?.start || '' };
   }
   const eventsOn = iso => live(S.data.events).filter(e => e.date === iso);
-  function ausfallFor(iso, cid) {
-    return live(S.data.events).find(e => e.type === 'ausfall' && e.date === iso && (!e.classId || e.classId === cid)) || null;
+  // Ein Ausfall gilt für den ganzen Tag oder (mit from/to) nur für einzelne Stunden. Ganztägige zuerst, damit die Reihenfolge überall gleich ist.
+  const ausfaelleOn = (iso, cid) => live(S.data.events).filter(e => e.type === 'ausfall' && e.date === iso && (!e.classId || e.classId === cid))
+    .sort((a, b) => (a.from == null ? 0 : 1) - (b.from == null ? 0 : 1) || String(a.id).localeCompare(String(b.id)));
+  const ausfallCovers = (e, f, t = f) => e.from == null || (e.from <= t && f <= (e.to ?? e.from));
+  function ausfallFor(iso, cid, from = null, to = from) {
+    const es = ausfaelleOn(iso, cid);
+    return (from == null ? es[0] : es.find(e => ausfallCovers(e, from, to))) || null;
   }
   // Stundentausch: gleiche Klasse, anderes Fach (z. B. 06c: statt Deutsch Englisch)
   const normCls = n => String(n || '').toLowerCase().replace(/\s+/g, '').replace(/^0+(?=\d)/, '');
@@ -418,7 +429,7 @@
         const to = S.data.classes[e.toClassId];
         l.cancelled = `Tausch: ${swapName(to, l.cls)} statt ${swapName(l.cls, to)}`;
         l.away = e;
-        const aus = ausfallFor(iso, to.id);
+        const aus = ausfallFor(iso, to.id, l.from, l.to);
         extra.push({ ...l, cls: to, away: null, swapIn: e, swapFrom: l.cls, room: l.room || to.room || '', cancelled: aus ? (aus.note || 'Ausfall') : null, ausfall: aus });
       }
       return all.concat(extra).filter(l => !cid || l.cls.id === cid).sort((a, b) => a.from - b.from || collator.compare(a.cls.name, b.cls.name));
@@ -432,13 +443,26 @@
       if (cid && c.id !== cid) continue;
       for (const sl of (c.slots || [])) {
         if (sl.wd !== wd || !slotValid(sl, iso)) continue;
-        const t = periodTimes(sl.from, sl.to, iso);
-        const aus = ausfallFor(iso, c.id);
-        out.push({
-          cls: c, date: iso, from: sl.from, to: sl.to, hours: sl.to - sl.from + 1,
-          room: sl.room || c.room || '', start: t.start, end: t.end,
-          cancelled: aus ? (aus.note || 'Ausfall') : null, ausfall: aus
-        });
+        // Block nach Ausfällen aufteilen: Fällt nur eine Stunde aus, bleibt der Rest der Doppelstunde bestehen
+        const es = ausfaelleOn(iso, c.id), parts = [];
+        for (let p = sl.from; p <= sl.to; p++) {
+          const e = es.find(x => ausfallCovers(x, p)) || null;
+          let part = parts[parts.length - 1];
+          if (!part || !part.ausfall !== !e) { part = { from: p, to: p, ausfall: e, ausfaelle: [] }; parts.push(part); }
+          part.to = p;
+          if (e) {
+            const last = part.ausfaelle[part.ausfaelle.length - 1];
+            if (last && last.ev === e) last.to = p; else part.ausfaelle.push({ ev: e, from: p, to: p });
+          }
+        }
+        for (const part of parts) {
+          const t = periodTimes(part.from, part.to, iso);
+          out.push({
+            cls: c, date: iso, from: part.from, to: part.to, hours: part.to - part.from + 1,
+            room: sl.room || c.room || '', start: t.start, end: t.end,
+            cancelled: part.ausfall ? (part.ausfall.note || 'Ausfall') : null, ausfall: part.ausfall, ausfaelle: part.ausfaelle
+          });
+        }
       }
     }
     return out.sort((a, b) => a.from - b.from || collator.compare(a.cls.name, b.cls.name));
@@ -1704,7 +1728,7 @@
     return `<button type="button" class="ev-row ${e.date < t ? 'past' : ''}" data-action="editEvent" data-eid="${e.id}">
       ${picto(e.type)}
       <span class="ev-date"><b>${WD[wdOf(e.date)]}</b>${fmtISO(e.date)}</span>
-      <span class="ev-main"><strong>${esc(evTitle(e))}</strong>${clsChip(c)}${e.type === 'tausch' ? `<small>${swapText(e)}${e.note ? ' · ' + esc(e.note) : ''}</small>` : e.note ? `<small>${esc(e.note)}</small>` : ''}</span>
+      <span class="ev-main"><strong>${esc(evTitle(e))}</strong>${clsChip(c)}${e.type === 'tausch' ? `<small>${swapText(e)}${e.note ? ' · ' + esc(e.note) : ''}</small>` : e.note || e.from != null ? `<small>${[e.from != null ? pLabel(e.from, e.to ?? e.from) : '', esc(e.note || '')].filter(Boolean).join(' · ')}</small>` : ''}</span>
       ${right}</button>`;
   }
   const fremdSub = x => `${pLabel(x.from, x.to)}${x.ort ? ' · ' + esc(x.ort) : ''}${x.ma?.fuer ? ' · für ' + esc(x.ma.fuer) : ''}${x.ber ? ' · in der Bereitschaft' : ''}`;
@@ -1766,11 +1790,13 @@
     const done = !missingGrades(ws).length;
     if (!td) {
       if (!days.length || !withLessons) return; // Ferienwoche: kein To-do
-      commit(d => { d.todos[id] = { id, auto: 'noten', cat: 'sonst', text: 'Mündliche Noten eintragen', classId: null, date: days[0], done, doneAt: done ? now() : null, createdAt: now(), updatedAt: now() }; }, { sync: true });
+      commit(d => { d.todos[id] = { id, auto: 'noten', cat: 'sonst', text: 'Mündliche Noten eintragen', classId: null, date: days[0], done, autoDone: done, doneAt: done ? now() : null, createdAt: now(), updatedAt: now() }; }, { sync: true });
       return;
     }
     if (td.deleted) return;
-    if (td.done !== done && (done || !td.doneAt || td.auto === 'noten')) commit(d => { d.todos[id] = Object.assign({}, td, { done, doneAt: done ? now() : null, updatedAt: now() }); });
+    // Selbst abhaken, wenn alle Noten da sind; wieder öffnen nur, was auch selbst abgehakt wurde – von Hand Abgehaktes bleibt
+    if (done && !td.done) commit(d => { d.todos[id] = Object.assign({}, td, { done: true, autoDone: true, doneAt: now(), updatedAt: now() }); });
+    else if (!done && td.done && td.autoDone) commit(d => { d.todos[id] = Object.assign({}, td, { done: false, autoDone: false, doneAt: null, updatedAt: now() }); });
   }
   const hasLessonOn = (cid, d) => lessonsOn(d, cid).some(l => !l.away && !l.cancelled);
   function nextLessonDate(cid, after = todayISO()) { // nächster Unterrichtstag des Kurses ab heute (inkl.)
@@ -1882,7 +1908,7 @@
   function todoToggle(id) {
     const x = S.data.todos[id]; if (!x) return;
     const done = !x.done;
-    commit(d => { d.todos[id] = Object.assign({}, x, { done, doneAt: done ? now() : null, updatedAt: now() }); });
+    commit(d => { d.todos[id] = Object.assign({}, x, { done, autoDone: false, doneAt: done ? now() : null, updatedAt: now() }); });
     if (done) toast('Erledigt', { undo: () => commit(d => { d.todos[id] = Object.assign({}, S.data.todos[id], { done: false, doneAt: null, updatedAt: now() }); }) });
   }
   function viewTodos() {
@@ -2971,7 +2997,7 @@
       actions: [...(r ? [{ label: 'Entfernen', cls: 'danger', value: '__del' }] : []), { label: 'nicht mitgeschrieben', value: '__nt' }, { label: 'Abbrechen', value: null }]
     });
     if (!res) return;
-    if (res === '__del') return commit(d => { d.results[a.id + '|' + s.id] = { id: a.id + '|' + s.id, deleted: true, updatedAt: now() }; });
+    if (res === '__del') return commit(d => { d.results[a.id + '|' + s.id] = { id: a.id + '|' + s.id, deleted: true, updatedAt: now() }; nsTodoSync(d, d.assessments[a.id]); });
     if (res === '__nt') return setResult(a, s.id, { value: null, label: 'nt' });
     setResult(a, s.id, { value: gridValue(res), label: res });
   }
@@ -3443,13 +3469,22 @@
     for (const t of kandidaten) {
       const date = t.start.slice(0, 10), time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16);
       const own = t.durch ? untisOwn(untisToks(t.titel + ' ' + untisInfo(t).klassen.join(' '))) : null;
+      const pr = periodRange(time, endT, date), jeKurs = new Map();
       for (const l of planLessonsOn(date).filter(x => !x.away && overlapMin(x.start, x.end, time, endT) > 0 && (!own || own.some(c => c.id === x.cls.id)))) {
-        const id = 'untis-' + t.id + '-' + l.cls.id, prev = d.events[id];
+        const a = pr ? Math.max(l.from, pr[0]) : l.from, b = pr ? Math.min(l.to, pr[1]) : l.to;
+        const f = a <= b ? a : l.from, z = a <= b ? b : l.to, x = jeKurs.get(l.cls.id);
+        jeKurs.set(l.cls.id, x ? { from: Math.min(x.from, f), to: Math.max(x.to, z) } : { from: f, to: z });
+      }
+      for (const [cid, std] of jeKurs) {
+        const id = 'untis-' + t.id + '-' + cid, prev = d.events[id];
         aktiv.add(id);
         const note = t.durch ? (t.durch.length ? `Vertretung durch ${t.durch.join(', ')} (WebUntis)` : 'Entfall laut WebUntis (ohne Lehrkraft)') : 'Entfall laut WebUntis';
-        if (prev && !prev.revoked && !prev.deleted) continue;
         if (prev && prev.deleted && !prev.revoked) continue; // vom Nutzer gelöscht
-        d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date, note, untis: true, updatedAt: stand };
+        if (prev && !prev.deleted && !prev.revoked) { // schon eingetragen: Stunden nachführen (auch ältere Einträge ohne Stundenangabe)
+          if (prev.from !== std.from || prev.to !== std.to) d.events[id] = Object.assign({}, prev, std, { updatedAt: Math.max(stand, prev.updatedAt || 0) });
+          continue;
+        }
+        d.events[id] = { id, type: 'ausfall', kind: null, classId: cid, date, from: std.from, to: std.to, note, untis: true, updatedAt: stand };
         aus++;
       }
     }
@@ -4008,9 +4043,11 @@
     const rows = new Map();
     for (let d = from; d <= to; d = addDaysISO(d, 1)) for (const l of lessonsOn(d)) {
       if (!l.cancelled || !l.ausfall || l.away) continue;
-      const k = l.ausfall.id + '|' + d;
-      if (!rows.has(k)) rows.set(k, { ev: l.ausfall, date: d, ls: [] });
-      rows.get(k).ls.push(l);
+      for (const a of (l.ausfaelle?.length ? l.ausfaelle : [{ ev: l.ausfall, from: l.from, to: l.to }])) {
+        const k = a.ev.id + '|' + d;
+        if (!rows.has(k)) rows.set(k, { ev: a.ev, date: d, ls: [] });
+        rows.get(k).ls.push({ cls: l.cls, from: a.from, to: a.to, hours: a.to - a.from + 1 });
+      }
     }
     return [...rows.values()].map(r => ({ ...r, hours: sum(r.ls.map(l => l.hours)) }));
   }
@@ -4625,7 +4662,7 @@
       });
       if (reason) {
         const id = uid();
-        commit(d => { d.events[id] = { id, type: 'ausfall', kind: null, classId: cid, date, note: reason, updatedAt: now() }; });
+        commit(d => { d.events[id] = { id, type: 'ausfall', kind: null, classId: cid, date, from: l.from, to: l.to, note: reason, updatedAt: now() }; });
         toast('Ausfall eingetragen', { undo: () => commit(d => { d.events[id] = { id, deleted: true, updatedAt: now() }; }) });
       }
     } else if (r === 'ausfall-edit') editEvent(aus);
@@ -4680,6 +4717,11 @@
   }
   function tombstoneStudent(d, sid) {
     for (const e of Object.values(d.entries)) if (!e.deleted && e.studentId === sid) d.entries[e.id] = { id: e.id, deleted: true, updatedAt: now() };
+    const weg = (map, keys) => { for (const k of keys) if (!map[k].deleted) map[k] = { id: k, deleted: true, updatedAt: now() }; };
+    weg(d.results, Object.keys(d.results).filter(k => k.endsWith('|' + sid)));
+    weg(d.overrides, Object.keys(d.overrides).filter(k => k.split('|')[1] === sid));
+    weg(d.warnings, Object.keys(d.warnings).filter(k => k.split('|')[1] === sid));
+    weg(d.obs, Object.keys(d.obs).filter(k => d.obs[k].studentId === sid));
     d.students[sid] = { id: sid, deleted: true, updatedAt: now() };
     if (S.device.names) delete S.device.names[sid];
   }
@@ -5202,7 +5244,7 @@
             if (l.away || l.ausfall) continue;
             const id = `krank-${x}-${l.cls.id}`;
             d.events[id] = { id, type: 'ausfall', kind: null, classId: l.cls.id, date: x, note: 'krank', grund: 'krank', updatedAt: now() };
-            n++;
+            n += l.hours;
           }
         }
       });
@@ -5418,11 +5460,19 @@
       const c = S.data.classes[d.cid];
       const sts = studentsOf(c.id);
       const n = liveEntries().filter(e => e.classId === c.id).length;
-      if (!await confirmDialog('Kurs löschen', `Kurs <strong>${esc(clsLabel(c))}</strong> mit ${plural(sts.length, 'Kind', 'Kindern')} und ${plural(n, 'Noteneintrag', 'Noteneinträgen')} endgültig löschen?`, 'Endgültig löschen', true)) return;
+      if (!await confirmDialog('Kurs löschen', `Kurs <strong>${esc(clsLabel(c))}</strong> mit ${plural(sts.length, 'Kind', 'Kindern')}, ${plural(n, 'Noteneintrag', 'Noteneinträgen')} sowie allen Arbeiten und To-dos des Kurses endgültig löschen?`, 'Endgültig löschen', true)) return;
       S.courseId = null;
       commit(dd => {
         for (const s of sts) tombstoneStudent(dd, s.id);
-        for (const e of Object.values(dd.events)) if (!e.deleted && e.classId === c.id) dd.events[e.id] = { id: e.id, deleted: true, updatedAt: now() };
+        const tomb = (map, pred) => { for (const [k, x] of Object.entries(map)) if (!x.deleted && pred(x, k)) map[k] = { id: k, deleted: true, updatedAt: now() }; };
+        tomb(dd.events, e => e.classId === c.id || e.toClassId === c.id);
+        const arbeiten = new Set(Object.entries(dd.assessments).filter(([, a]) => !a.deleted && a.classId === c.id).map(([k]) => k));
+        tomb(dd.results, (r, k) => arbeiten.has(k.split('|')[0]));
+        tomb(dd.assessments, a => a.classId === c.id);
+        tomb(dd.todos, t => t.classId === c.id);
+        tomb(dd.obs, o => o.classId === c.id);
+        tomb(dd.overrides, (o, k) => k.split('|')[0] === c.id);
+        tomb(dd.warnings, (o, k) => k.split('|')[0] === c.id);
         dd.classes[c.id] = { id: c.id, deleted: true, updatedAt: now() };
       });
       toast(`Kurs ${clsLabel(c)} gelöscht`);
