@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.2';
+  const APP_VERSION = '6.6.3';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2944,7 +2944,7 @@
       <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest, max. 10 Punkte' : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
         <div class="spiegel">${spiegel.map((n, i) => `<span class="g${i + 1}"><b>${i + 1}</b>${n}</span>`).join('')}<span class="sp-avg">Ø ${vals.length ? fmtNum(mean(vals), 2) : '–'}</span></div></div>
         <button type="button" class="icon-btn plain" data-action="editAssess" data-aid="${a.id}" aria-label="Bearbeiten">${icon('pencil')}</button></section>
-      ${a.km ? `<p class="muted small">Noten aus dem Klausurmanager übernommen.${a.kmMissing && a.kmMissing.length ? ` Ohne Kind im Kurs: ${esc(a.kmMissing.join(', '))} – unter Kinder die Kürzel-Tabelle einlesen.` : ''}</p>` : ''}
+      ${a.km ? `<p class="muted small">Noten aus dem Klausurmanager übernommen.${a.kmMissing && a.kmMissing.length ? ` Ohne Kind im Kurs: ${esc(a.kmMissing.join(', '))} – Kurs → Zahnrad → „Aus Kürzel-Tabelle übernehmen“.` : ''}</p>` : ''}
       <div class="progress-line"><div class="bar" ${ccStyle(c)}><div style="width:${students.length ? Math.round(done / students.length * 100) : 0}%"></div></div><span>${done}/${students.length} eingetragen</span></div>`;
     if (!students.length) return html + emptyState('Keine Kinder in diesem Kurs', '', `<button type="button" class="btn primary" data-action="openCourse" data-cid="${c.id}" data-tab="schueler">Kinder hinzufügen</button>`, 'users');
     if (a.type === 'vokabel') {
@@ -3327,7 +3327,7 @@
   function kmReport(r, p) {
     if (r.pending) return toast(`Neue Noten „${p.titel}“ (${p.kurs}) – bitte unter Kurs → Arbeiten/Klausuren einem Kurs zuordnen.`, { ms: 7000 });
     if (r.skipped) return;
-    toast(`Klausurmanager: „${p.titel}“ – ${plural(r.n, 'Note', 'Noten')} in ${clsLabel(r.c)}${r.missing.length ? ` · ${plural(r.missing.length, 'Kürzel', 'Kürzel')} ohne Kind (Kürzel-Tabelle einlesen)` : ''}`, { ms: 6000 });
+    toast(`Klausurmanager: „${p.titel}“ – ${plural(r.n, 'Note', 'Noten')} in ${clsLabel(r.c)}${r.missing.length ? ` · ${plural(r.missing.length, 'Kürzel', 'Kürzel')} ohne Kind (Kurs → Zahnrad → „Aus Kürzel-Tabelle übernehmen“)` : ''}`, { ms: 6000 });
   }
   const kmIsTest = id => /^ewh-notentest-/.test(id || ''); // Notenabgleich des Klausurmanagers – nie ins Notenheft
   function kmRetryPending() { // z. B. nachdem die Kürzel-Tabelle eingelesen oder der Kurs auf dem anderen Gerät zugeordnet wurde
@@ -3466,7 +3466,7 @@
     return { kurse, ohne };
   }
   function kmOrderReport(r, manuell) {
-    if (r.kurse) toast(`Reihenfolge wie in der Kürzel-Tabelle: ${plural(r.kurse, 'Kurs', 'Kurse')} neu sortiert${r.ohne ? ` · ${plural(r.ohne, 'Kind', 'Kinder')} ohne Kürzel (Kurs → Bearbeiten → Kinder aus der Kürzel-Tabelle)` : ''}`, { ms: 6000 });
+    if (r.kurse) toast(`Reihenfolge wie in der Kürzel-Tabelle: ${plural(r.kurse, 'Kurs', 'Kurse')} neu sortiert${r.ohne ? ` · ${plural(r.ohne, 'Kind', 'Kinder')} ohne Kürzel (Kurs → Zahnrad → „Aus Kürzel-Tabelle übernehmen“)` : ''}`, { ms: 6000 });
     else if (manuell) toast('Reihenfolge war schon aktuell');
   }
   function kmCalCheck(p) {
@@ -3696,7 +3696,7 @@
     if (!pend.length) return '';
     const hasKm = studentsOf(c.id).some(s => s.km);
     return `<section class="panel km-pend"><h2>${icon('download')} Neue Noten aus dem Klausurmanager</h2>
-      <p class="muted small">Der Kurs ließ sich nicht eindeutig zuordnen.${hasKm ? '' : ' Tipp: Erst unter Kinder (Zahnrad) die Kürzel-Tabelle einlesen – dann klappt die Zuordnung automatisch.'}</p>
+      <p class="muted small">Der Kurs ließ sich nicht eindeutig zuordnen.${hasKm ? '' : ' Tipp: Erst unter Zahnrad → „Aus Kürzel-Tabelle übernehmen“ die Kinder einlesen – dann klappt die Zuordnung automatisch.'}</p>
       ${pend.map(p => `<div class="km-row"><div><strong>${esc(p.titel)}</strong><span class="muted small">${esc(p.kurs)} · ${fmtISO(p.datum, true)} · ${plural(p.ergebnisse.length, 'Kürzel', 'Kürzel')}${p.nachschrift ? ' · Nachschrift' : ''}</span></div>
         <div class="btnrow"><button type="button" class="btn small primary" data-action="kmAssign" data-key="${esc(p.quelle)}" data-cid="${c.id}">In ${esc(clsLabel(c))} eintragen</button>
         <button type="button" class="btn small ghost" data-action="kmDismiss" data-key="${esc(p.quelle)}">Verwerfen</button></div></div>`).join('')}
