@@ -1,6 +1,11 @@
-# Notenheft 6.6.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.2 – Reihenfolge kommt automatisch vom PC
+
+- Der PC (Windows-Aufgabe „Notenheft-Kalender“, stündlich) schickt die Reihenfolge aus der **Kürzel-Tabelle** verschlüsselt ans Notenheft – nur Blattname und Kürzel, keine Namen. Das Notenheft sortiert jeden Kurs danach, ohne Zutun. Geändert wird nur, wenn sich die Tabelle ändert.
+- Kinder ohne Kürzel stehen am Ende; ihnen gibt einmal **Kurs → Bearbeiten → Kinder aus der Kürzel-Tabelle** das Kürzel.
 
 ## Neu in Version 6.6.1 – Reihenfolge wie in der Kursliste
 

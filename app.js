@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.1';
+  const APP_VERSION = '6.6.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -3360,7 +3360,7 @@
           const got = await GH.get(Object.assign({}, g, { path: f.path }));
           if (!got) continue;
           const obj = await kmDecrypt(got.blob);
-          p = obj && obj.format === 'km-kalender' ? kmCalCheck(obj) : kmCheck(obj);
+          p = obj && obj.format === 'km-kalender' ? kmCalCheck(obj) : obj && obj.format === 'km-reihenfolge' ? kmOrderCheck(obj) : kmCheck(obj);
         } catch (e) {
           console.warn('Klausurmanager-Eingang', f.name, e.message);
           if (e.code === 'KM_KEY') { seen[f.name] = f.sha; ch = true; }
@@ -3368,6 +3368,7 @@
         }
         if (!S.data) return;
         seen[f.name] = f.sha; ch = true;
+        if (p.reihenfolge) { kmOrderReport(kmOrderApply(p)); continue; }
         if (!p.kalender && kmIsTest(p.id)) continue;
         if (p.kalender) kmCalReport(kmCalApply(p), p); else kmReport(kmProcess(p), p);
       }
@@ -3399,6 +3400,7 @@
       const raw = String(text || '').trim();
       const obj = await kmDecrypt(JSON.parse(raw.slice(raw.indexOf('{'))));
       if (obj && obj.format === 'km-kalender') { const c = kmCalCheck(obj); kmCalReport(kmCalApply(c), c, true); persistLocal(); render(); return true; }
+      if (obj && obj.format === 'km-reihenfolge') { kmOrderReport(kmOrderApply(kmOrderCheck(obj)), true); persistLocal(); render(); return true; }
       const p = kmCheck(obj);
       const r = kmProcess(p);
       persistLocal();
@@ -3425,6 +3427,48 @@
   }
   /* ---------- Kalender aus dem Klausurmanager: Outlook-Schulkonto, Google (privat), WebUntis ---------- */
   const CAL_DT = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/;
+  /* ---------- Reihenfolge der Kinder aus der Kürzel-Tabelle (vom PC, nur Kürzel) ---------- */
+  function kmOrderCheck(p) {
+    if (!p || p.format !== 'km-reihenfolge' || !Array.isArray(p.kurse)) throw new Error('Die Reihenfolge-Datei ist unvollständig.');
+    return {
+      reihenfolge: true, stand: Number(p.stand) || now(),
+      kurse: p.kurse.filter(k => k && Array.isArray(k.kuerzel)).slice(0, 200).map(k => ({
+        blatt: String(k.blatt || '').slice(0, 40),
+        kuerzel: k.kuerzel.filter(x => typeof x === 'string' && x.trim()).slice(0, 200).map(x => x.trim().slice(0, 20))
+      })).filter(k => k.kuerzel.length)
+    };
+  }
+  // Je Kurs das Tabellenblatt mit den meisten passenden Kürzeln; Platz = Zeile im Blatt
+  function kmOrderApply(p) {
+    let kurse = 0, ohne = 0;
+    commit(d => {
+      for (const c of classesSorted()) {
+        const sts = studentsOf(c.id), mit = sts.filter(s => s.km);
+        ohne += sts.length - mit.length;
+        if (!mit.length) continue;
+        let best = null, bn = 0;
+        for (const k of p.kurse) {
+          const n = mit.filter(s => k.kuerzel.includes(s.km)).length;
+          if (n > bn || (n === bn && n && normKurs(k.blatt) === normKurs(c.name))) { best = k; bn = n; }
+        }
+        if (!best) continue;
+        let ch = false;
+        for (const s of sts) {
+          const i = s.km ? best.kuerzel.indexOf(s.km) : -1, pos = i >= 0 ? i + 1 : undefined;
+          if (s.pos === pos) continue;
+          const neu = Object.assign({}, d.students[s.id], { updatedAt: now() });
+          if (pos) neu.pos = pos; else delete neu.pos;
+          d.students[s.id] = neu; ch = true;
+        }
+        if (ch) kurse++;
+      }
+    });
+    return { kurse, ohne };
+  }
+  function kmOrderReport(r, manuell) {
+    if (r.kurse) toast(`Reihenfolge wie in der Kürzel-Tabelle: ${plural(r.kurse, 'Kurs', 'Kurse')} neu sortiert${r.ohne ? ` · ${plural(r.ohne, 'Kind', 'Kinder')} ohne Kürzel (Kurs → Bearbeiten → Kinder aus der Kürzel-Tabelle)` : ''}`, { ms: 6000 });
+    else if (manuell) toast('Reihenfolge war schon aktuell');
+  }
   function kmCalCheck(p) {
     if (!p || p.format !== 'km-kalender' || !/^[a-z0-9_-]{1,30}$/.test(p.quelle || '') || !['schule', 'privat', 'untis'].includes(p.art) || !Array.isArray(p.termine))
       throw new Error('Die Kalenderdatei ist unvollständig.');
@@ -5753,5 +5797,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
 })();
