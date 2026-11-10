@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6';
+  const APP_VERSION = '6.6.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -294,7 +294,9 @@
   const classesSorted = () => live(S.data.classes).sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.subject || '', b.subject || ''));
   const nameKey = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[p.length - 1] + ' ' + p.slice(0, -1).join(' ') : (p[0] || ''); };
   const byLastName = (a, b) => collator.compare(nameKey(a), nameKey(b));
-  const studentsOf = cid => live(S.data.students).filter(s => s.classId === cid).sort((a, b) => byLastName(a.name, b.name));
+  // Reihenfolge: wie in der Kürzel-Tabelle (pos = Zeile, nur eine Zahl, kein Name); Kinder ohne pos danach nach Nachname
+  const byListPos = (a, b) => (a.pos > 0 ? 0 : 1) - (b.pos > 0 ? 0 : 1) || (a.pos > 0 && b.pos > 0 ? a.pos - b.pos : 0) || byLastName(a.name, b.name);
+  const studentsOf = cid => live(S.data.students).filter(s => s.classId === cid).sort(byListPos);
   // Pro Kind, Kurs und Datum zählt genau EIN Eintrag (bei Altbeständen der zuletzt geänderte)
   const entryKey = e => `${e.classId}|${e.studentId}|${e.date}`;
   let entCache = { src: null, list: [] };
@@ -2672,10 +2674,10 @@
     const k = S.ovSort;
     const nullLast = (a, b) => (a == null) - (b == null) || (a ?? 0) - (b ?? 0);
     rows.sort((a, b) => {
-      if (k === 'avg') return nullLast(a.st.avg, b.st.avg) || byLastName(a.s.name, b.s.name);
-      if (k === 'count') return a.st.count - b.st.count || byLastName(a.s.name, b.s.name);
-      if (k === 'absent') return b.st.absent - a.st.absent || byLastName(a.s.name, b.s.name);
-      return byLastName(a.s.name, b.s.name);
+      if (k === 'avg') return nullLast(a.st.avg, b.st.avg) || byListPos(a.s, b.s);
+      if (k === 'count') return a.st.count - b.st.count || byListPos(a.s, b.s);
+      if (k === 'absent') return b.st.absent - a.st.absent || byListPos(a.s, b.s);
+      return byListPos(a.s, b.s);
     });
     return rows;
   }
@@ -3697,22 +3699,25 @@
     };
     const res = await openModal({
       title: 'Kinder aus der Kürzel-Tabelle',
-      body: `<p class="muted small">Übernommen werden nur Vorname, Nachname und Kürzel. Die Namen bleiben auf diesem Gerät, online liegen nur die Kürzel. Vorhandene Kinder und ihre Noten bleiben erhalten.</p>
+      body: `<p class="muted small">Übernommen werden nur Vorname, Nachname und Kürzel. Die Namen bleiben auf diesem Gerät, online liegen nur die Kürzel. Vorhandene Kinder und ihre Noten bleiben erhalten. Die Reihenfolge im Kurs wird wie im Tabellenblatt.</p>
         ${names.length > 1 ? `<label class="field"><span>Tabellenblatt</span><select id="m-sh">${names.map(n => `<option value="${esc(n)}" ${n === guess ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : ''}
         <div id="m-prev">${preview(guess)}</div>`,
       mount: root => { const sel = root.querySelector('#m-sh'); if (sel) sel.addEventListener('change', () => { root.querySelector('#m-prev').innerHTML = preview(sel.value); }); },
       actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', cls: 'primary', run: root => plan(root.querySelector('#m-sh')?.value || guess).out }]
     });
     if (!res) return;
-    let upd = 0, add = 0;
+    let upd = 0, add = 0, moved = 0;
     commit(d => {
       const usedC = usedCodes(d), nm = S.device.names || (S.device.names = {});
-      for (const r of res) {
-        if (r.s) { if (r.s.km !== r.km) { d.students[r.s.id] = Object.assign({}, d.students[r.s.id], { km: r.km, updatedAt: now() }); upd++; } }
-        else { const id = uid(); nm[id] = r.name; d.students[id] = { id, classId: c.id, code: newCode(usedC), km: r.km, updatedAt: now() }; add++; }
-      }
+      res.forEach((r, i) => {
+        const pos = i + 1;
+        if (r.s) {
+          const old = d.students[r.s.id];
+          if (old.km !== r.km || old.pos !== pos) { if (old.km !== r.km) upd++; else moved++; d.students[r.s.id] = Object.assign({}, old, { km: r.km, pos, updatedAt: now() }); }
+        } else { const id = uid(); nm[id] = r.name; d.students[id] = { id, classId: c.id, code: newCode(usedC), km: r.km, pos, updatedAt: now() }; add++; }
+      });
     });
-    toast(upd || add ? `${plural(add, 'Kind', 'Kinder')} neu, ${upd} Kürzel ergänzt` : 'Alles war schon aktuell');
+    toast(upd || add || moved ? `${plural(add, 'Kind', 'Kinder')} neu, ${upd} Kürzel ergänzt${moved ? ', Reihenfolge wie in der Tabelle' : ''}` : 'Alles war schon aktuell');
     kmRetryPending();
   }
 
@@ -3866,7 +3871,7 @@
     const tc = termCfg();
     const dl = tc.warnDeadline;
     const days = dl ? diffDays(todayISO(), dl) : null;
-    const info = warnInfo(c).sort((a, b) => byLastName(a.s.name, b.s.name));
+    const info = warnInfo(c).sort((a, b) => byListPos(a.s, b.s));
     const need = info.filter(w => w.was4), extra = info.filter(w => !w.was4 && !w.was56 && w.drift), already = info.filter(w => w.was56);
     const status = w => w.now == null ? '<span class="pill soft">noch keine Noten</span>' : w.drift ? `<span class="pill red">abdriftend</span>` : w.border ? '<span class="pill amber">grenzwertig</span>' : '<span class="pill green">stabil</span>';
     const row = w => `<div class="warn-row ${w.warned ? 'done' : ''}">
@@ -3926,7 +3931,7 @@
   }
   function printWarned() {
     const sy = termCfg();
-    const blocks = classesSorted().map(c => ({ c, list: warnInfo(c).filter(w => w.warned).sort((a, b) => byLastName(a.s.name, b.s.name)) })).filter(b => b.list.length);
+    const blocks = classesSorted().map(c => ({ c, list: warnInfo(c).filter(w => w.warned).sort((a, b) => byListPos(a.s, b.s)) })).filter(b => b.list.length);
     printDoc('Gewarnte Schülerinnen und Schüler', `<p class="pd-sub">Schuljahr ${sy.sy}/${String(sy.sy + 1).slice(2)}${sy.warnDeadline ? ` · Frist ${fmtISO(sy.warnDeadline, true)}` : ''}</p>
       ${blocks.length ? blocks.map(b => `<h2>${esc(clsLabel(b.c))}</h2><table class="pt"><thead><tr><th>Name</th><th>Halbjahreszeugnis</th><th>Stand jetzt</th><th>gewarnt am</th></tr></thead><tbody>
         ${b.list.map(w => `<tr><td>${esc(w.s.name)}</td><td>${gradeText(b.c, w.hj1)}</td><td>${gradeText(b.c, w.nowSuggest)}</td><td>${fmtISO(w.warned.date, true)}</td></tr>`).join('')}</tbody></table>`).join('') : '<p>Noch niemand als gewarnt markiert.</p>'}`);
@@ -5748,5 +5753,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
 })();

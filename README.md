@@ -1,6 +1,11 @@
-# Notenheft 6.6 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.1 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.1 – Reihenfolge wie in der Kursliste
+
+- Kinder stehen in der Reihenfolge der **Kürzel-Tabelle** (Tabellenblatt des Kurses). Für bestehende Kurse einmal **Kurs → Bearbeiten → Kinder aus der Kürzel-Tabelle** wählen und übernehmen – Noten bleiben erhalten, nur die Reihenfolge ändert sich.
+- Gespeichert wird nur die Platznummer (keine Namen); sie gilt auf allen Geräten. Von Hand ergänzte Kinder stehen danach, nach Nachnamen.
 
 ## Neu in Version 6.6 – SoMi-Quartalsnoten (Oberstufe)
 
