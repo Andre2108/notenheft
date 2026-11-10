@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.5.4';
+  const APP_VERSION = '6.6';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -225,7 +225,7 @@
     ovRange: 'hj', ovFrom: null, ovTo: null, ovSort: 'name', ovTab: 'tabelle',
     detailStudent: null,
     courseId: null, courseTab: 'ueberblick',
-    assessId: null, vIdx: 0, vHalf: false, vMode: 'karte', zTerm: null, zTab: 'noten', chartRange: 'sj', detailFrom: null,
+    assessId: null, vIdx: 0, vHalf: false, vMode: 'karte', zTerm: null, sqTerm: null, zTab: 'noten', chartRange: 'sj', detailFrom: null,
     setupMode: 'new',
     sync: freshSync(),
     lastActivity: now(), hiddenAt: null
@@ -780,15 +780,23 @@
     const wSum = sum(schr.map(x => x[1]));
     return { mCount: mUnits.length, mAvg: mean(mUnits), vCount: vok.length, vAvg: mean(vok), somi: mean(somiItems), schr: wSum ? sum(schr.map(x => x[0] * x[1])) / wSum : null, sCount: schr.length, weighted: schr.some(x => x[1] !== 1) };
   }
+  // Oberstufe: von Hand eingetragene SoMi-Quartalsnote (liegt in overrides, Schlüssel …|<Jahr>-Q1-somi)
+  const somiQKey = (c, s, qKey) => `${c.id}|${s.id}|${termCfg().sy}-${qKey}-somi`;
+  const somiQOf = (c, s, qKey) => { const o = S.data.overrides[somiQKey(c, s, qKey)]; return o && !o.deleted && o.value != null ? o : null; };
   function calc(s, term, c) {
     c = c || S.data.classes[s.classId];
     let r;
     if (term.parts) {
-      const parts = termsFor(levelOf(c)).filter(t => term.parts.includes(t.key)).map(t => calcRaw(s, c, t.from, t.to));
+      const ts = termsFor(levelOf(c)).filter(t => term.parts.includes(t.key));
+      const parts = ts.map(t => { const p = calcRaw(s, c, t.from, t.to), q = isSII(c) && somiQOf(c, s, t.key); if (q) { p.somiCalc = p.somi; p.somi = q.value; p.somiSet = true; } return p; });
       const all = calcRaw(s, c, term.from, term.to);
       const qs = parts.map(p => p.somi).filter(x => x != null);
-      r = Object.assign(all, { somi: qs.length ? mean(qs) : null, quarterSomi: parts.map(p => p.somi) });
-    } else r = calcRaw(s, c, term.from, term.to);
+      r = Object.assign(all, { somi: qs.length ? mean(qs) : null, quarterSomi: parts.map(p => p.somi), quarterSet: parts.map(p => !!p.somiSet) });
+    } else {
+      r = calcRaw(s, c, term.from, term.to);
+      const q = term.quarter && isSII(c) && somiQOf(c, s, term.key);
+      if (q) { r.somiCalc = r.somi; r.somi = q.value; r.somiSet = true; }
+    }
     r.total = r.somi != null && r.schr != null ? (r.somi + r.schr) / 2 : (r.somi ?? r.schr);
     r.vShare = (r.mCount + r.vCount) ? r.vCount / (r.mCount + r.vCount) : 0;
     r.suggest = snap(c, r.total);
@@ -3718,19 +3726,22 @@
     const terms = termsFor(levelOf(c));
     if (!S.zTerm || !terms.some(t => t.key === S.zTerm)) { const t = todayISO(); S.zTerm = (terms.find(x => x.zeugnis && t >= x.from && t <= x.to) || terms.find(x => x.zeugnis)).key; }
     const ws = warnInfo(c).filter(w => w.was4 && w.drift && !w.warned).length;
-    let html = `<div class="toolbar">${classSelect()}${S.zTab !== 'warn' ? termSelect(c) : ''}</div>
-      <div class="seg full"><button type="button" data-action="zTab" data-tab="noten" class="${S.zTab !== 'warn' ? 'on' : ''}">Zeugnisnoten</button><button type="button" data-action="zTab" data-tab="warn" class="${S.zTab === 'warn' ? 'on' : ''}">Blaue Briefe${ws ? ` <span class="badge">${ws}</span>` : ''}</button></div>`;
-    if (S.zTab === 'warn') return html + viewWarn(c);
+    const sii = isSII(c);
+    const zt = S.zTab === 'warn' || (S.zTab === 'somi' && sii) ? S.zTab : 'noten';
+    let html = `<div class="toolbar">${classSelect()}${zt === 'noten' ? termSelect(c) : zt === 'somi' ? quarterSelect(c) : ''}</div>
+      <div class="seg full"><button type="button" data-action="zTab" data-tab="noten" class="${zt === 'noten' ? 'on' : ''}">Zeugnisnoten</button>${sii ? `<button type="button" data-action="zTab" data-tab="somi" class="${zt === 'somi' ? 'on' : ''}">SoMi-Quartalsnoten</button>` : ''}<button type="button" data-action="zTab" data-tab="warn" class="${zt === 'warn' ? 'on' : ''}">Blaue Briefe${ws ? ` <span class="badge">${ws}</span>` : ''}</button></div>`;
+    if (zt === 'warn') return html + viewWarn(c);
+    if (zt === 'somi') return html + viewSomiQ(c);
     const t = terms.find(x => x.key === S.zTerm);
     const students = studentsOf(c.id);
     if (!students.length) return html + emptyState('Keine Kinder in diesem Kurs', '', '', 'users');
     const rows = students.map(s => ({ s, r: calc(s, t, c) }));
-    html += `<p class="muted small range-info">${isSII(c) ? 'Oberstufe: Zeugnis in Punkten. ' : 'Sek I: Noten mit Tendenz (1,7 = 2+ · 2,0 = 2 · 2,3 = 2-). '}Gewichtung: schriftlich 50 % · SoMi 50 %${c.vocab ? ' (SoMi inkl. Vokabeltests, anteilig nach Anzahl)' : ''}${t.parts ? ' · SoMi = Schnitt der beiden Quartale' : ''}. Zeile antippen zum Korrigieren.</p>
+    html += `<p class="muted small range-info">${isSII(c) ? 'Oberstufe: Zeugnis in Punkten. ' : 'Sek I: Noten mit Tendenz (1,7 = 2+ · 2,0 = 2 · 2,3 = 2-). '}Gewichtung: schriftlich 50 % · SoMi 50 %${c.vocab ? ' (SoMi inkl. Vokabeltests, anteilig nach Anzahl)' : ''}${t.parts ? ' · SoMi = Schnitt der beiden Quartale (eingetragene SoMi-Quartalsnoten gehen vor, Stern *)' : ''}${t.quarter && sii ? ' · SoMi = eingetragene SoMi-Quartalsnote (*), sonst berechnet' : ''}. Zeile antippen zum Korrigieren.</p>
       <div class="table-wrap"><table class="ov zt">
       <thead><tr><th>Name</th><th class="num">SoMi</th><th class="num">Schriftl.</th><th class="num">Vorschlag</th><th class="num">Zeugnis</th><th>Korrektur</th><th>Begründung</th></tr></thead>
       <tbody>${rows.map(({ s, r }) => `<tr data-action="zOverride" data-sid="${s.id}" tabindex="0" class="${r.override ? 'ovr' : ''}">
         <td>${esc(s.name)}</td>
-        <td class="num">${r.somi != null ? fmtNum(r.somi, 2) : '–'}${r.vCount ? `<small class="sub">Vok. ${Math.round(r.vShare * 100)} %</small>` : ''}${r.quarterSomi ? `<small class="sub">${r.quarterSomi.map(q => q != null ? fmtNum(q, 1) : '–').join(' / ')}</small>` : ''}</td>
+        <td class="num">${r.somi != null ? fmtNum(r.somi, 2) : '–'}${r.somiSet ? '*' : ''}${r.vCount ? `<small class="sub">Vok. ${Math.round(r.vShare * 100)} %</small>` : ''}${r.quarterSomi ? `<small class="sub">${r.quarterSomi.map((q, i) => q != null ? fmtNum(q, 1) + (r.quarterSet[i] ? '*' : '') : '–').join(' / ')}</small>` : ''}</td>
         <td class="num">${r.schr != null ? fmtNum(r.schr, 2) : '–'}</td>
         <td class="num"><span class="avg ${valCls(r.suggest)} light">${gradeText(c, r.suggest)}</span></td>
         <td class="num"><span class="avg ${valCls(r.final)}">${gradeText(c, r.final)}</span></td>
@@ -3754,7 +3765,7 @@
       body: `<div class="calc">
           ${line('Mündlich Ø', r.mAvg, plural(r.mCount, S.data.settings.weighting === 'woche' ? 'Woche' : 'Note', S.data.settings.weighting === 'woche' ? 'Wochen' : 'Noten'))}
           ${c.vocab ? line('Vokabeltests Ø', r.vAvg, `${plural(r.vCount, 'Test', 'Tests')} · ${Math.round(r.vShare * 100)} % der SoMi`) : ''}
-          ${line(t.parts ? 'SoMi (Schnitt der Quartale)' : 'SoMi', r.somi, r.quarterSomi ? r.quarterSomi.map(q => q != null ? fmtNum(q, 2) : '–').join(' / ') : null)}
+          ${line(t.parts ? 'SoMi (Schnitt der Quartale)' : r.somiSet ? 'SoMi (Quartalsnote eingetragen)' : 'SoMi', r.somi, r.quarterSomi ? r.quarterSomi.map((q, i) => q != null ? fmtNum(q, 2) + (r.quarterSet[i] ? '*' : '') : '–').join(' / ') + (r.quarterSet.some(Boolean) ? ' · * eingetragen' : '') : r.somiSet ? `berechnet ${r.somiCalc != null ? fmtNum(r.somiCalc, 2) : '–'}` : null)}
           ${line(r.weighted ? 'Schriftlich Ø (gewichtet)' : 'Schriftlich Ø', r.schr, plural(r.sCount, 'Arbeit', 'Arbeiten'))}
           ${line('Gesamt (50 / 50)', r.total, null)}
           <div class="calc-row big"><span>Vorschlag</span><strong>${gradeText(c, r.suggest)}</strong></div>
@@ -3778,6 +3789,78 @@
     }
     commit(d => { d.overrides[r.key] = { id: r.key, classId: c.id, studentId: s.id, term: `${termCfg().sy}-${t.key}`, value: res.v, suggestAtTime: r.suggest, reason: res.reason, updatedAt: now() }; });
     toast('Zeugnisnote gespeichert');
+  }
+  /* ---------- SoMi-Quartalsnoten (Oberstufe) ---------- */
+  function quarterSelect(c) {
+    const qs = termsFor(levelOf(c)).filter(x => x.quarter);
+    if (!S.sqTerm || !qs.some(q => q.key === S.sqTerm)) { const d = todayISO(); S.sqTerm = (qs.find(q => d >= q.from && d <= q.to) || qs.find(q => d < q.from) || qs[qs.length - 1]).key; }
+    return `<label class="sel"><span class="sr">Quartal</span><select data-change="setSQTerm">${qs.map(q => `<option value="${q.key}" ${q.key === S.sqTerm ? 'selected' : ''}>${q.label} (${fmtISO(q.from)}–${fmtISO(q.to)})</option>`).join('')}</select></label>`;
+  }
+  function viewSomiQ(c) {
+    const q = termsFor(levelOf(c)).find(x => x.key === S.sqTerm);
+    const students = studentsOf(c.id);
+    if (!students.length) return emptyState('Keine Kinder in diesem Kurs', '', '', 'users');
+    const unit = n => plural(n, S.data.settings.weighting === 'woche' ? 'Woche' : 'Note', S.data.settings.weighting === 'woche' ? 'Wochen' : 'Noten');
+    const rows = students.map(s => { const r = calcRaw(s, c, q.from, q.to); return { s, r, sug: snap(c, r.somi), set: somiQOf(c, s, q.key) }; });
+    const done = rows.filter(x => x.set).length;
+    return `<p class="muted small range-info">SoMi-Quartalsnote in Punkten für das ${q.label}. Vorschlag = Schnitt der mündlichen Noten${c.vocab ? ' und Vokabeltests' : ''} im Quartal. Eingetragene Noten zählen fürs Halbjahreszeugnis (SoMi = Schnitt der beiden Quartale) und werden mitsynchronisiert. Zeile antippen zum Eintragen · ${done} von ${students.length} eingetragen.</p>
+      <div class="table-wrap"><table class="ov zt">
+      <thead><tr><th>Name</th><th class="num">Mündlich Ø</th>${c.vocab ? '<th class="num">Vok. Ø</th>' : ''}<th class="num">Vorschlag</th><th class="num">Quartalsnote SoMi</th><th>Bemerkung</th></tr></thead>
+      <tbody>${rows.map(({ s, r, sug, set }) => `<tr data-action="zSomiQ" data-sid="${s.id}" tabindex="0" class="${set ? 'ovr' : ''}">
+        <td>${esc(s.name)}</td>
+        <td class="num">${r.mAvg != null ? fmtNum(r.mAvg, 2) : '–'}<small class="sub">${unit(r.mCount)}</small></td>
+        ${c.vocab ? `<td class="num">${r.vAvg != null ? fmtNum(r.vAvg, 2) : '–'}</td>` : ''}
+        <td class="num"><span class="avg ${valCls(sug)} light">${gradeText(c, sug)}</span></td>
+        <td class="num">${set ? `<span class="avg ${valCls(set.value)}">${gradeText(c, set.value)}</span>` : '<span class="muted">offen</span>'}</td>
+        <td class="reason">${set ? esc(set.reason || '') : ''}</td></tr>`).join('')}</tbody></table></div>
+      <div class="export">
+        ${done < students.length ? `<button type="button" class="btn" data-action="somiQAll">Vorschläge für alle offenen übernehmen</button>` : ''}
+        <button type="button" class="btn" data-action="exportSomiQ">${icon('download')} Als CSV</button>
+      </div>`;
+  }
+  async function somiQDialog(c, s, q) {
+    const r = calcRaw(s, c, q.from, q.to), sug = snap(c, r.somi), cur = somiQOf(c, s, q.key);
+    let val = cur ? cur.value : sug;
+    const opts = Array.from({ length: 16 }, (_, i) => 15 - i);
+    const on = (v, p) => v != null && toPoints(v) === p;
+    const line = (l, v, n) => `<div class="calc-row"><span>${l}</span><strong>${v != null ? fmtNum(v, 2) : '–'}</strong>${n != null ? `<small>${n}</small>` : ''}</div>`;
+    const res = await openModal({
+      title: `${s.name} · SoMi ${q.label}`,
+      body: `<div class="calc">
+          ${line('Mündlich Ø', r.mAvg, plural(r.mCount, S.data.settings.weighting === 'woche' ? 'Woche' : 'Note', S.data.settings.weighting === 'woche' ? 'Wochen' : 'Noten'))}
+          ${c.vocab ? line('Vokabeltests Ø', r.vAvg, plural(r.vCount, 'Test', 'Tests')) : ''}
+          <div class="calc-row big"><span>Vorschlag</span><strong>${gradeText(c, sug)}</strong></div>
+        </div>
+        <div class="field"><span>Quartalsnote SoMi (Punkte)</span><div class="grade-grid pts" id="m-g">${opts.map(p => `<button type="button" class="gbtn g${Math.min(6, Math.max(1, Math.round(pointsToValue(p) + 1e-9)))} ${on(val, p) ? 'on' : ''} ${on(sug, p) ? 'sug' : ''}" data-p="${p}">${p}</button>`).join('')}</div>
+          <small class="muted">Umrandet: Vorschlag der App</small></div>
+        <label class="field"><span>Bemerkung (optional)</span><input id="m-reason" maxlength="160" value="${esc(cur?.reason || '')}" placeholder="z. B. Referat eingerechnet"></label>`,
+      mount: root => {
+        root.querySelector('#m-g').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (!b) return; val = pointsToValue(+b.dataset.p); root.querySelectorAll('#m-g button').forEach(x => x.classList.toggle('on', x === b)); });
+      },
+      actions: [...(cur ? [{ label: 'Eintrag löschen', value: '__del' }] : []), { label: 'Abbrechen', value: null },
+        { label: 'Speichern', cls: 'primary', run: root => ({ v: val, reason: root.querySelector('#m-reason').value.trim() }) }]
+    });
+    if (!res) return;
+    const key = somiQKey(c, s, q.key);
+    if (res === '__del') { commit(d => { d.overrides[key] = { id: key, deleted: true, updatedAt: now() }; }); toast('Quartalsnote gelöscht'); return; }
+    if (res.v == null) { toast('Bitte eine Punktzahl wählen'); return; }
+    commit(d => { d.overrides[key] = { id: key, classId: c.id, studentId: s.id, term: `${termCfg().sy}-${q.key}`, kind: 'somiQ', value: res.v, suggestAtTime: sug, reason: res.reason, updatedAt: now() }; });
+    toast('Quartalsnote SoMi gespeichert');
+  }
+  async function somiQAll() {
+    const c = ensureClass(), q = termsFor(levelOf(c)).find(x => x.key === S.sqTerm);
+    const open = studentsOf(c.id).map(s => ({ s, sug: snap(c, calcRaw(s, c, q.from, q.to).somi) })).filter(x => !somiQOf(c, x.s, q.key) && x.sug != null);
+    if (!open.length) { toast('Keine offenen Vorschläge – ohne mündliche Noten gibt es keinen Vorschlag'); return; }
+    const ok = await openModal({ title: 'Vorschläge übernehmen', body: `<p>${plural(open.length, 'Kind bekommt', 'Kinder bekommen')} den Vorschlag der App als Quartalsnote SoMi (${q.label}). Einzelne Noten kannst du danach antippen und ändern.</p>`, actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', cls: 'primary', value: true }] });
+    if (!ok) return;
+    commit(d => { for (const { s, sug } of open) { const key = somiQKey(c, s, q.key); d.overrides[key] = { id: key, classId: c.id, studentId: s.id, term: `${termCfg().sy}-${q.key}`, kind: 'somiQ', value: sug, suggestAtTime: sug, reason: '', updatedAt: now() }; } });
+    toast(`${plural(open.length, 'Quartalsnote', 'Quartalsnoten')} gespeichert`);
+  }
+  function exportSomiQ() {
+    const c = ensureClass(), q = termsFor(levelOf(c)).find(x => x.key === S.sqTerm);
+    const out = [['Kurs', 'Fach', 'Quartal', 'Name', 'Mündlich Ø', 'Vokabeln Ø', 'Vorschlag (P.)', 'Quartalsnote SoMi (P.)', 'Bemerkung']];
+    for (const s of studentsOf(c.id)) { const r = calcRaw(s, c, q.from, q.to), set = somiQOf(c, s, q.key); out.push([c.name, c.subject || '', q.label, s.name, r.mAvg != null ? fmtNum(r.mAvg) : '', r.vAvg != null ? fmtNum(r.vAvg) : '', r.somi != null ? String(toPoints(r.somi)) : '', set ? String(toPoints(set.value)) : '', set?.reason || '']); }
+    downloadCSV(`Notenheft_${safeName(c.name)}_${safeName(c.subject || '')}_SoMi_${q.key}.csv`, out);
   }
   function viewWarn(c) {
     const tc = termCfg();
@@ -5166,6 +5249,7 @@
     importKuerzel(v, el) { const file = el.files && el.files[0]; el.value = ''; importKuerzel(file); },
     importKm(v, el) { const file = el.files && el.files[0]; el.value = ''; kmImportFile(file); },
     setZTerm(v) { S.zTerm = v; render(); },
+    setSQTerm(v) { S.sqTerm = v; render(); },
     toggleWarn(v, el) {
       const key = el.dataset.key;
       commit(d => { d.warnings[key] = el.checked ? { id: key, classId: el.dataset.cid, studentId: el.dataset.sid, warned: true, date: todayISO(), updatedAt: now() } : { id: key, deleted: true, updatedAt: now() }; });
@@ -5325,6 +5409,9 @@
     },
     pickGrade(d) { pickGrade(S.data.assessments[d.aid], S.data.students[d.sid]); },
     zTab(d) { S.zTab = d.tab; render(); },
+    zSomiQ(d) { const c = ensureClass(); somiQDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.sqTerm)); },
+    somiQAll() { somiQAll(); },
+    exportSomiQ() { exportSomiQ(); },
     zOverride(d) { const c = ensureClass(); overrideDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.zTerm)); },
     printConference() { printConference(); },
     exportZeugnis() { exportZeugnis(); },

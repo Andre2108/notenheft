@@ -1,6 +1,13 @@
-# Notenheft 6.5.4 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6 – SoMi-Quartalsnoten (Oberstufe)
+
+- **Kurs → Zeugnis → SoMi-Quartalsnoten** (nur EF/Q1/Q2): je Quartal für jedes Kind die SoMi-Note in Punkten eintragen. Vorschlag der App = Schnitt der mündlichen Noten (und Vokabeltests) im Quartal; Zeile antippen, Punkte wählen, optional eine Bemerkung.
+- **„Vorschläge für alle offenen übernehmen“** füllt den Rest mit einem Tipp; Einzelne lassen sich danach ändern oder löschen.
+- Eingetragene Quartalsnoten zählen fürs **Halbjahreszeugnis** (SoMi = Schnitt der beiden Quartale) und sind in der Zeugnisliste mit * markiert. Ohne Eintrag rechnet das Notenheft wie bisher.
+- Gespeichert wird verschlüsselt und auf beiden Geräten synchronisiert; Export als CSV.
 
 ## Neu in Version 6.5.4 – Fehlerbehebungen
 
