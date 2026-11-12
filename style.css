@@ -431,6 +431,31 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .list { display: flex; flex-direction: column; gap: 8px; }
 .row { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 12px; box-shadow: var(--shadow); }
 .row.flash { animation: flash .9s ease; }
+/* offen / fertig: wer in dieser Woche noch eine Note braucht */
+.row.is-open { border-left: 4px solid var(--warn); }
+.row.is-done { background: color-mix(in srgb, var(--ok) 5%, var(--card)); }
+.row.is-done .name { color: var(--muted); font-weight: 500; }
+.rstat { display: inline-flex; width: 20px; justify-content: center; color: var(--ok); flex: none; }
+.rstat .i { width: 18px; height: 18px; }
+.row.is-open .rstat::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
+.open-tag { font-style: normal; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: color-mix(in srgb, var(--warn) 75%, var(--text)); background: color-mix(in srgb, var(--warn) 16%, transparent); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+.cstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
+.cstrip-sum { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; margin-right: 2px; }
+.cstrip-sum .i { width: 15px; height: 15px; }
+.cstrip-sum.open { color: color-mix(in srgb, var(--warn) 80%, var(--text)); }
+.cstrip-sum.ok { color: var(--ok); }
+.cpill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 4px 6px 4px 9px; font-size: 13px; font-weight: 600; }
+.cpill i { width: 8px; height: 8px; border-radius: 50%; background: var(--cc); }
+.cpill b { display: inline-flex; align-items: center; min-width: 20px; height: 20px; justify-content: center; border-radius: 999px; padding: 0 6px; font-size: 12px; }
+.cpill.open b { background: var(--warn); color: #fff; }
+.cpill.ok { color: var(--muted); }
+.cpill.ok b { color: var(--ok); padding: 0 2px; }
+.cpill.ok b .i { width: 15px; height: 15px; }
+.cpill.cur { border-color: var(--cc); box-shadow: 0 0 0 1px var(--cc); }
+.pc-st { display: inline-flex; align-items: center; gap: 3px; margin-top: 6px; font-style: normal; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: rgba(255, 255, 255, .22); }
+.pick-course .pc-st { display: flex; width: fit-content; }
+.pc-st.open { background: #fff; color: #b45309; }
+.pc-st .i { width: 13px; height: 13px; }
 @keyframes flash { from { background: var(--flash); } to { background: var(--card); } }
 .row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 28px; }
 .name { font-weight: 600; flex: 1 1 auto; min-width: 0; }

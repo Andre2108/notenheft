@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.3';
+  const APP_VERSION = '6.6.4';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -862,6 +862,13 @@
       if (miss) out.push({ c, miss, total: st.length });
     }
     return out;
+  }
+  function weekCourseStatus(ws) { // je Kurs mit Unterricht in Woche ws: wie viele Kinder noch ohne Eintrag sind
+    const we = addDaysISO(ws, 6);
+    return classesSorted().filter(c => !c.noOral && !weekSkipped(c, ws) && studentsOf(c.id).length && weekHasLessons(c.id, ws)).map(c => {
+      const st = studentsOf(c.id), has = new Set(entriesOf(c.id, ws, we).map(e => e.studentId));
+      return { c, miss: st.filter(s => !has.has(s.id)).length, total: st.length };
+    });
   }
   function reminderWeek() {
     const t = new Date();
@@ -2070,7 +2077,9 @@
     if (cur) return openNoten(cur.cls.id, t);
     const today = [...new Set(ls.map(l => l.cls.id))];
     const rest = classesSorted().filter(c => !today.includes(c.id) && studentsOf(c.id).length).map(c => c.id);
-    const btn = id => { const c = S.data.classes[id]; return `<button type="button" class="pick-course" ${ccStyle(c)} data-cid="${id}"><b>${esc(c.name)}</b> ${esc(c.subject || '')}</button>`; };
+    const wst = new Map(weekCourseStatus(weekKey(t)).map(x => [x.c.id, x]));
+    const badge = id => { const x = wst.get(id); return !x ? '' : x.miss ? `<em class="pc-st open">${x.miss} fehlen</em>` : `<em class="pc-st ok">${icon('check')} fertig</em>`; };
+    const btn = id => { const c = S.data.classes[id]; return `<button type="button" class="pick-course" ${ccStyle(c)} data-cid="${id}"><b>${esc(c.name)}</b> ${esc(c.subject || '')}${badge(id)}</button>`; };
     const cid = await openModal({
       title: 'Noten eintragen – welcher Kurs?',
       body: `${today.length ? `<h4 class="pick-h">Heute</h4><div class="pick-grid">${today.map(btn).join('')}</div>` : ''}
@@ -2544,6 +2553,7 @@
         ${isThisWeek ? '' : '<button type="button" class="btn small" data-action="weekToday">Heute</button>'}
         <button type="button" class="icon-btn" data-action="weekNext" aria-label="Nächste Woche">${icon('right')}</button>
       </div>
+      ${courseStrip(cls)}
       ${weeklyMode(cls) ? `<p class="muted small week-mode-info">Eine Note pro Kind für KW ${isoWeek(ws)} – erneutes Antippen ersetzt sie. Einzelstunden: Kurs → Zahnrad → „Mündliche Noten“.</p>` : `<div class="days" role="group" aria-label="Datum für neue Einträge">
         ${[0, 1, 2, 3, 4].map(i => { const d = addDays(ws, i); const iso = toISO(d); return `<button type="button" data-action="setDay" data-day="${iso}" class="${iso === day ? 'on' : ''} ${lessonDays.has(iso) ? 'has-lesson' : ''}" ${ccStyle(cls)} title="${lessonDays.has(iso) ? 'Unterricht an diesem Tag' : ''}">${WD[i]} <small>${d.getDate()}.</small></button>`; }).join('')}
       </div>`}
@@ -2561,6 +2571,15 @@
     if (!students.length) return head + emptyState('Keine Kinder in diesem Kurs', '', `<button type="button" class="btn primary" data-action="openCourse" data-cid="${cls.id}" data-tab="schueler">Kinder hinzufügen</button>`, 'users');
     return head + (S.mode === 'karte' ? cardView(students, byS) : listView(students, byS));
   }
+  function courseStrip(cls) { // alle Kurse dieser Woche: was ist noch offen, was ist fertig
+    const st = weekCourseStatus(S.weekStart);
+    if (st.length < 2 && (!st.length || st[0].c.id === cls.id)) return '';
+    const open = sum(st.map(x => x.miss));
+    return `<div class="cstrip" role="group" aria-label="Kurse in KW ${isoWeek(parseISO(S.weekStart))}">
+      <span class="cstrip-sum ${open ? 'open' : 'ok'}">${open ? `${icon('bell')} ${plural(open, 'Note fehlt', 'Noten fehlen')}` : `${icon('check')} alle fertig`}</span>
+      ${st.map(x => `<button type="button" class="cpill ${x.miss ? 'open' : 'ok'} ${x.c.id === cls.id ? 'cur' : ''}" ${ccStyle(x.c)} data-action="openNotenWeek" data-cid="${x.c.id}" data-ws="${S.weekStart}" title="${esc(clsLabel(x.c))}: ${x.miss ? `${x.miss} von ${x.total} fehlen` : 'alle eingetragen'}"><i></i>${esc(x.c.name)}<b>${x.miss ? x.miss : icon('check')}</b></button>`).join('')}
+    </div>`;
+  }
   function chip(e) {
     const d = parseISO(e.date);
     const wd = WD[(d.getDay() + 6) % 7];
@@ -2577,9 +2596,10 @@
       const g = es.filter(e => e.kind === 'note');
       const avg = g.length > 1 ? mean(g.map(e => e.grade)) : null;
       const cur = es.find(e => e.date === currentDay(s.id));
-      return `<div class="row ${cur ? 'has-today' : ''}" id="st-${s.id}">
+      return `<div class="row ${cur ? 'has-today' : ''} ${es.length ? 'is-done' : 'is-open'}" id="st-${s.id}">
         <div class="row-head">
-          <span class="name">${esc(s.name)}</span>
+          <span class="rstat" aria-hidden="true">${es.length ? icon('check') : ''}</span>
+          <span class="name">${esc(s.name)}${es.length ? '' : ' <em class="open-tag">fehlt</em>'}</span>
           <span class="chips">${es.map(chip).join('')}</span>
           ${avg != null ? `<span class="wavg">Ø ${fmtNum(avg, 1)}</span>` : ''}
         </div>
