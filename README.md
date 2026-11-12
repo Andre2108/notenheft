@@ -1,6 +1,12 @@
-# Notenheft 6.6.3 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.4 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.4 – Offene mündliche Noten auf einen Blick
+
+- **Mündlich eintragen:** Kinder ohne Note in dieser Woche haben einen orangen Rand und „fehlt“; wer schon eine Note hat, ist grün mit Haken.
+- Über der Liste stehen **alle Kurse der Woche** mit der Zahl fehlender Noten (oder ✓ fertig) – antippen wechselt direkt in den Kurs.
+- Auch die **Kursauswahl** bei „Mündliche Noten eintragen“ zeigt je Kurs „x fehlen“ bzw. „fertig“.
 
 ## Neu in Version 6.6.2 – Reihenfolge kommt automatisch vom PC
 
