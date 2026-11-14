@@ -1,6 +1,13 @@
-# Notenheft 6.6.4 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.5 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.5 – Termine außerhalb des Unterrichts für die ganze Woche
+
+- **Heute/Start:** Unter „Termine heute“ steht neu **„Außerhalb deines Unterrichts“** – alle dienstlichen Termine der restlichen Woche, für die du früher kommen oder länger bleiben musst: Beginn vor deiner ersten bzw. Ende nach deiner letzten Stunde (inkl. Vertretungen), Termine an Tagen ohne Unterricht und am **Samstag/Sonntag** (z. B. Tag der offenen Tür).
+- **Ab Freitag** kommt die **nächste Woche** dazu (eigene Überschrift mit KW).
+- Termine während deiner Unterrichtszeit sowie ganztägige Einträge an Unterrichtstagen bleiben wie bisher **tagesaktuell** unter „Termine heute“. Private Termine, Ferien und Feiertage zählen nicht mit.
+- **Eigene Termine** haben jetzt optional **Uhrzeit von/bis** – nur damit lässt sich erkennen, ob sie außerhalb des Unterrichts liegen. Ohne Uhrzeit erscheinen sie nur, wenn an dem Tag kein Unterricht ist.
 
 ## Neu in Version 6.6.4 – Offene mündliche Noten auf einen Blick
 

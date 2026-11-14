@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.4';
+  const APP_VERSION = '6.6.5';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1734,7 +1734,7 @@
     return `<div class="sumbar ${bold ? 'bold' : ''}">${items.map(it => `<button type="button" class="sum-item ${it.tone || ''}" ${it.action ? `data-action="${it.action}"` : 'tabindex="-1"'} ${it.data || ''}>
       <strong>${it.value}</strong><span>${it.label}</span></button>`).join('')}</div>`;
   }
-  function eventRow(e, { showCountdown = false } = {}) {
+  function eventRow(e, { showCountdown = false, why = '' } = {}) {
     const t = todayISO();
     const c = e.classId ? S.data.classes[e.classId] : null;
     let right = '';
@@ -1742,10 +1742,12 @@
       const days = diffDays(t, e.date);
       right = `<span class="ev-right"><b>${days === 0 ? 'heute' : days === 1 ? 'morgen' : `in ${days} T.`}</b>${e.type === 'pruefung' && c ? `<small>noch ${examInfo(e).lessons ?? 0} Std.</small>` : ''}</span>`;
     }
+    if (why) right = `<span class="ev-right"><b>${e.date >= t ? relTag(e.date) : ''}</b><small>${esc(why)}</small></span>`;
+    const zeit = e.time ? `${e.time}${e.timeEnd ? '–' + e.timeEnd : ''} Uhr` : '';
     return `<button type="button" class="ev-row ${e.date < t ? 'past' : ''}" data-action="editEvent" data-eid="${e.id}">
       ${picto(e.type)}
       <span class="ev-date"><b>${WD[wdOf(e.date)]}</b>${fmtISO(e.date)}</span>
-      <span class="ev-main"><strong>${esc(evTitle(e))}</strong>${clsChip(c)}${e.type === 'tausch' ? `<small>${swapText(e)}${e.note ? ' · ' + esc(e.note) : ''}</small>` : e.note || e.from != null ? `<small>${[e.from != null ? pLabel(e.from, e.to ?? e.from) : '', esc(e.note || '')].filter(Boolean).join(' · ')}</small>` : ''}</span>
+      <span class="ev-main"><strong>${esc(evTitle(e))}</strong>${clsChip(c)}${e.type === 'tausch' ? `<small>${swapText(e)}${e.note ? ' · ' + esc(e.note) : ''}</small>` : e.note || e.from != null || zeit ? `<small>${[zeit, e.from != null ? pLabel(e.from, e.to ?? e.from) : '', esc(e.note || '')].filter(Boolean).join(' · ')}</small>` : ''}</span>
       ${right}</button>`;
   }
   const fremdSub = x => `${pLabel(x.from, x.to)}${x.ort ? ' · ' + esc(x.ort) : ''}${x.ma?.fuer ? ' · für ' + esc(x.ma.fuer) : ''}${x.ber ? ' · in der Bereitschaft' : ''}`;
@@ -1963,7 +1965,7 @@
     const myName = S.data.prefs?.profil?.name;
     let html = `<div class="start-head"><h1>${greet}${myName ? ', ' + esc(myName) : ''}!</h1><p>${fmtLong(t)} · KW ${isoWeek(parseISO(t))}${free ? ' · ' + esc(free) : ''}</p></div>`;
     html += holidayStrip(t);
-    if (classesSorted().length) html += heuteGlance(t) + heuteTermine(t);
+    if (classesSorted().length) html += heuteGlance(t) + heuteTermine(t) + heuteWoche(t);
     const cs = classesSorted();
     if (!cs.length) return html + noCourses();
     const ls = lessonsOn(t).filter(l => !l.away && !l.cancelled);
@@ -2045,7 +2047,7 @@
   }
   function todayBanner(t) {
     const items = [];
-    for (const e of eventsOn(t)) items.push(`<li>${picto(e.type === 'pruefung' ? 'pruefung' : e.type === 'ausfall' ? 'ausfall' : 'termin', 'sm')}<span><b>${esc(evTitle(e))}</b>${e.classId ? ` · ${esc(clsLabel(S.data.classes[e.classId]))}` : ''}${e.time ? ` · ${esc(e.time)} Uhr` : ''}</span></li>`);
+    for (const e of eventsOn(t)) items.push(`<li>${picto(e.type === 'pruefung' ? 'pruefung' : e.type === 'ausfall' ? 'ausfall' : 'termin', 'sm')}<span><b>${esc(evTitle(e))}</b>${e.classId ? ` · ${esc(clsLabel(S.data.classes[e.classId]))}` : ''}${e.time ? ` · ${esc(e.time)}${e.timeEnd ? '–' + esc(e.timeEnd) : ''} Uhr` : ''}</span></li>`);
     for (const x of todosHeute(t).filter(x => todoDue(x) <= t)) items.push(`<li>${picto('todo', 'sm')}<span><b>${esc(x.text || x.title || 'To-do')}</b> · To-do</span></li>`);
     const cal = calItemsOn(t), schule = cal.filter(x => x.art === 'schule'), privat = cal.filter(x => x.art === 'privat');
     items.push(...schule.map(calLi));
@@ -2161,6 +2163,46 @@
 
     return html;
   }
+  // Dienstliche Termine außerhalb des eigenen Unterrichts (früher kommen, länger bleiben, Samstag) – Rest der Woche, ab Freitag auch die nächste
+  function unterrichtSpanne(d) {
+    const ls = lessonsOn(d).filter(l => !l.away && !l.cancelled).concat(untisFremd(d));
+    if (!ls.length) return null;
+    return { von: ls.map(l => l.start).sort()[0], bis: ls.map(l => l.end).sort().pop() };
+  }
+  function ausserhalb(d, von, bis) { // Grund, warum der Termin außerhalb des Unterrichts liegt – sonst null
+    const fr = freeReason(d);
+    if (fr && fr !== 'Wochenende') return null; // Ferien und Feiertage nicht
+    const sp = unterrichtSpanne(d);
+    if (!sp) return fr ? WD_LONG[wdOf(d)] : 'kein Unterricht';
+    if (!von) return null; // ganztägig oder ohne Uhrzeit an einem Unterrichtstag: nur tagesaktuell
+    if (bis && bis > sp.bis) return `Unterricht bis ${sp.bis}`;
+    if (!bis && von >= sp.bis) return `Unterricht bis ${sp.bis}`;
+    if (von < sp.von) return `Unterricht ab ${sp.von}`;
+    return null;
+  }
+  function wocheAusserhalb(d) {
+    const end = addDaysISO(weekKey(d), wdOf(d) >= 4 ? 13 : 6), out = [];
+    for (let x = addDaysISO(d, 1); x <= end; x = addDaysISO(x, 1)) {
+      for (const e of eventsOn(x)) {
+        if (e.type !== 'termin') continue;
+        const why = ausserhalb(x, e.time, e.timeEnd);
+        if (why) out.push({ date: x, sort: e.time || '', html: eventRow(e, { why }) });
+      }
+      for (const t of calItemsOn(x)) {
+        if (t.art !== 'schule' || t.untis || !t.ganztags && t.start.slice(0, 10) !== x) continue;
+        const why = t.ganztags ? ausserhalb(x) : ausserhalb(x, t.start.slice(11, 16), t.ende.slice(0, 10) === x ? t.ende.slice(11, 16) : '23:59');
+        if (why) out.push({ date: x, sort: t.ganztags ? '' : t.start.slice(11, 16), html: calRow(t, x, why) });
+      }
+    }
+    return { end, items: out.sort((a, b) => a.date.localeCompare(b.date) || a.sort.localeCompare(b.sort)) };
+  }
+  function heuteWoche(d) {
+    const { end, items } = wocheAusserhalb(d), ws = weekKey(d), nws = addDaysISO(ws, 7), zwei = end > addDaysISO(ws, 6);
+    const head = `<div class="section-head"><h2>${picto('termin', 'sm')} Außerhalb deines Unterrichts</h2><span class="muted small">${zwei ? 'diese und nächste Woche' : 'diese Woche'}</span></div>`;
+    if (!items.length) return `<section class="section" id="h-woche">${head}<p class="empty-line">${zwei ? 'Bis Ende nächster Woche' : 'Diese Woche'} keine Termine vor oder nach deinem Unterricht.</p></section>`;
+    const block = (label, ls) => ls.length ? `${zwei ? `<h3 class="sub-label">${label}</h3>` : ''}<div class="ev-list">${ls.map(x => x.html).join('')}</div>` : '';
+    return `<section class="section" id="h-woche">${head}${block('Diese Woche', items.filter(x => x.date < nws))}${block(`Nächste Woche · KW ${isoWeek(parseISO(nws))}`, items.filter(x => x.date >= nws))}</section>`;
+  }
   function heuteBody(d, opts = {}) {
     const t = todayISO();
     const isToday = d === t;
@@ -2174,7 +2216,7 @@
     const tds = todosHeute(d);
     const reminders = isToday ? reminderBanner() + warnCard() : '';
     let html = '';
-    if (!opts.ohneTermine) html += heuteTermine(d);
+    if (!opts.ohneTermine) html += heuteTermine(d) + heuteWoche(d);
     // 1. Anstehender Unterricht
     html += `<section class="section" id="h-unterricht"><div class="section-head"><h2>${picto('lesson', 'sm')} ${isToday ? 'Anstehender Unterricht' : 'Unterricht'}</h2>${upcoming.length && !free ? `<span class="muted small">Std. bis zur Prüfung</span>` : ''}</div>`;
     if (free) {
@@ -3616,11 +3658,12 @@
     }
     return out.sort((a, b) => (a.ganztags ? '0' : '1' + a.start).localeCompare(b.ganztags ? '0' : '1' + b.start));
   }
+  const relTag = iso => { const n = diffDays(todayISO(), iso); return n === 0 ? 'heute' : n === 1 ? 'morgen' : `in ${n} T.`; };
   const calLi = t => `<li class="cal-li ${t.art}"><i class="cal-dot"></i><span><b>${calTime(t)}</b> ${t.untis ? 'Untis: ' : ''}${esc(t.titel || 'Termin')}${t.ort ? ` <small class="muted">· ${esc(t.ort)}</small>` : ''}</span></li>`;
-  function calRow(t, iso) {
+  function calRow(t, iso, why = '') {
     const von = t.ganztags ? 'ganztägig' : `${t.start.slice(11, 16)}–${t.ende.slice(11, 16)} Uhr`;
     const tage = t.start.slice(0, 10) !== t.ende.slice(0, 10) ? ` · bis ${fmtISO(t.ende.slice(0, 10), true)}` : '';
-    return `<details class="cal-det ${t.art}"><summary class="ev-row cal-row ${t.art}">${picto('termin')}<span class="ev-date"><b>${WD[wdOf(iso)]}</b>${fmtISO(iso)}</span><span class="ev-main"><strong>${t.untis ? 'WebUntis: ' : ''}${esc(t.titel || 'Termin')}</strong><small>${calTime(t)}${t.ort ? ' · ' + esc(t.ort) : ''} · ${t.art === 'privat' ? 'Privat' : 'Schulkalender'}</small></span></summary>
+    return `<details class="cal-det ${t.art}"><summary class="ev-row cal-row ${t.art}">${picto('termin')}<span class="ev-date"><b>${WD[wdOf(iso)]}</b>${fmtISO(iso)}</span><span class="ev-main"><strong>${t.untis ? 'WebUntis: ' : ''}${esc(t.titel || 'Termin')}</strong><small>${calTime(t)}${t.ort ? ' · ' + esc(t.ort) : ''} · ${t.art === 'privat' ? 'Privat' : 'Schulkalender'}</small></span>${why ? `<span class="ev-right"><b>${relTag(iso)}</b><small>${esc(why)}</small></span>` : ''}</summary>
       <div class="cal-more"><p><b>${von}</b>${tage}</p>${t.ort ? `<p>Ort: ${esc(t.ort)}</p>` : ''}${t.info ? `<p class="cal-info">${esc(t.info)}</p>` : ''}
         <p class="muted small">${t.art === 'privat' ? 'Privater Kalender (Google)' : t.untis ? 'WebUntis' : 'Schulkalender (Outlook)'}</p>
         ${isIOS() ? `<a class="btn small" href="calshow:${Math.floor(new Date(t.ganztags ? t.start.slice(0, 10) + 'T08:00' : t.start).getTime() / 1000) - 978307200}">${icon('cal')} Im iOS-Kalender öffnen</a>` : ''}
@@ -4570,6 +4613,8 @@
       <label class="field" id="m-tkind-f"><span>Bezeichnung</span><input id="m-tkind" maxlength="60" value="${esc(ev?.type === 'termin' ? ev.kind || '' : '')}" placeholder="z. B. Elternsprechtag, Konferenz"></label>
       <label class="field"><span>Kurs</span><select id="m-cls"><option value="" id="m-all">–</option>${cs.map(c => `<option value="${c.id}" ${c.id === cid ? 'selected' : ''}>${esc(clsLabel(c))}</option>`).join('')}</select></label>
       <label class="field"><span>Datum</span><input type="date" id="m-date" value="${date}"></label>
+      <div class="two-col" id="m-time-f"><label class="field"><span>von (optional)</span><input type="time" id="m-time" value="${esc(ev?.time || '')}"></label>
+        <label class="field"><span>bis (optional)</span><input type="time" id="m-time2" value="${esc(ev?.timeEnd || '')}"></label></div>
       <label class="field"><span id="m-note-l">Bemerkung</span><input type="text" id="m-note" maxlength="200" value="${esc(ev?.note || '')}"></label>
       <div class="field" id="m-aus-f"><span>Durch den Termin fallen Stunden aus</span><div id="m-aus" class="aus-pick"></div></div>
       <p class="muted small" id="m-info"></p>
@@ -4595,6 +4640,7 @@
           root.querySelectorAll('#m-type button').forEach(x => x.classList.toggle('on', x.dataset.t === type));
           root.querySelector('#m-kind-f').classList.toggle('hidden', type !== 'pruefung');
           root.querySelector('#m-tkind-f').classList.toggle('hidden', type !== 'termin');
+          root.querySelector('#m-time-f').classList.toggle('hidden', type !== 'termin');
           root.querySelector('#m-all').textContent = type === 'ausfall' ? 'Ganzer Tag – alle Kurse' : type === 'termin' ? 'ohne Kurs' : 'Kurs wählen …';
           root.querySelector('#m-note-l').textContent = type === 'ausfall' ? 'Grund' : type === 'pruefung' ? 'Themen / Bemerkung' : 'Notiz';
           const d = root.querySelector('#m-date').value, c = root.querySelector('#m-cls').value;
@@ -4630,7 +4676,9 @@
             if (type === 'pruefung' && !c) { modalErr(root, 'Bitte einen Kurs wählen.'); return false; }
             const kind = type === 'pruefung' ? root.querySelector('#m-kind').value : type === 'termin' ? (root.querySelector('#m-tkind').value.trim() || 'Termin') : null;
             const ausCids = type === 'termin' ? [...root.querySelectorAll('#m-aus input:checked')].map(i => i.value) : [];
-            return { type, kind, classId: c, date: d, note: root.querySelector('#m-note').value.trim(), ausCids };
+            const tm = type === 'termin' ? root.querySelector('#m-time').value || null : null, tm2 = tm ? root.querySelector('#m-time2').value || null : null;
+            if (tm && tm2 && tm2 <= tm) { modalErr(root, '„bis“ muss nach „von“ liegen.'); return false; }
+            return { type, kind, classId: c, date: d, time: tm, timeEnd: tm2, note: root.querySelector('#m-note').value.trim(), ausCids };
           }
         }
       ]
