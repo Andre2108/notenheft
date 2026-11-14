@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.5';
+  const APP_VERSION = '6.6.6';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1968,26 +1968,6 @@
     if (classesSorted().length) html += heuteGlance(t) + heuteTermine(t) + heuteWoche(t);
     const cs = classesSorted();
     if (!cs.length) return html + noCourses();
-    const ls = lessonsOn(t).filter(l => !l.away && !l.cancelled);
-    const cur = ls.find(l => lessonRunning(l)) || ls.find(l => !lessonStarted(l));
-    const fr = untisFremd(t).find(x => lessonRunning(x) || !lessonStarted(x));
-    if (fr && (!cur || fr.from < cur.from && !lessonRunning(cur))) {
-      html += `<button type="button" class="start-now untis-fremd ${fr.regel ? 'regel' : ''}" data-action="maOpen" data-uid="${esc(fr.id)}" data-date="${t}"><span class="sn-k">${lessonRunning(fr) ? 'Jetzt' : `Als Nächstes · ${esc(fr.start)} Uhr`}${fr.regel ? '' : ' · Vertretung'}</span>
-        <b>${esc(fr.titel || 'Stunde')}</b><small>${fremdSub(fr)}</small></button>`;
-    } else if (cur) {
-      const run = lessonRunning(cur);
-      html += `<button type="button" class="start-now" ${ccStyle(cur.cls)} data-action="lessonSheet" data-cid="${cur.cls.id}" data-date="${t}" data-from="${cur.from}">
-        <span class="sn-k">${run ? 'Jetzt' : `Als Nächstes · ${esc(cur.start)} Uhr`}</span>
-        <b>${esc(cur.cls.name)} <span>${esc(cur.cls.subject || '')}</span></b>
-        <small>${pLabel(cur.from, cur.to)}${cur.room ? ' · ' + roomHtml(cur) : ''}${cur.swapIn ? ' · Tausch' : ''}${cur.untis ? ' · zusätzlich laut Untis' : ''}</small></button>`;
-    } else {
-      const d = addDaysISO(t, 1); // erst am Vortag zeigen
-      const nl0 = lessonsOn(d).find(l => !l.away && !l.cancelled), nf = untisFremd(d)[0];
-      const nl = nf && (!nl0 || nf.from < nl0.from) ? nf : nl0;
-      const nlName = !nl ? '' : nl.fremd ? `${esc(nl.titel || 'Stunde')} <span>${nl.regel ? '' : 'Vertretung'}</span>` : `${esc(nl.cls.name)} <span>${esc(nl.cls.subject || '')}</span>`;
-      html += `<div class="start-now calm"><span class="sn-k">${ls.length ? 'Heute kein Unterricht mehr' : free ? esc(free) : 'Heute kein Unterricht'}</span>
-        ${nl ? `<b>${diffDays(t, d) === 1 ? 'Morgen' : `${WD_LONG[wdOf(d)]}, ${fmtISO(d)}`}: ${nlName}</b><small>${esc(nl.start)} Uhr · ${pLabel(nl.from, nl.to)}${nl.fremd ? (nl.ort ? ' · ' + esc(nl.ort) : '') + (nl.ber ? ' · in der Bereitschaft' : '') : nl.room ? ' · ' + roomHtml(nl) : ''}</small>` : ''}</div>`;
-    }
     // Nur Aktionen, die jetzt wirklich möglich bzw. sinnvoll sind
     const ws = weekKey(t), we = addDaysISO(ws, 6);
     const withKids = cs.filter(c => studentsOf(c.id).length && !c.noOral);
@@ -2100,7 +2080,7 @@
   }
   function soonItems(d, days = 3) { // was in den nächsten Tagen ansteht (ohne heute)
     const to = addDaysISO(d, days), out = [];
-    for (const e of live(S.data.events)) if (e.date > d && e.date <= to) out.push({ date: e.date, ord: e.type === 'pruefung' ? 0 : e.type === 'ausfall' ? 1 : 2, html: eventRow(e, { showCountdown: true }) });
+    for (const e of live(S.data.events)) if (e.date > d && e.date <= to && !(e.type === 'termin' && ausserhalb(e.date, e.time, e.timeEnd))) out.push({ date: e.date, ord: e.type === 'pruefung' ? 0 : e.type === 'ausfall' ? 1 : 2, html: eventRow(e, { showCountdown: true }) });
     const rel = iso => { const n = diffDays(todayISO(), iso); return n === 1 ? 'morgen' : n > 1 ? `in ${n} T.` : ''; };
     for (const h of live(S.data.holidays)) if (h.from > d && h.from <= to) out.push({ date: h.from, ord: 3, html: `<div class="ev-row static">${picto('ferien')}<span class="ev-date"><b>${WD[wdOf(h.from)]}</b>${fmtISO(h.from)}</span><span class="ev-main"><strong>${esc(h.name)}</strong><small>bis ${fmtISO(h.to, true)}</small></span><span class="ev-right"><b>${rel(h.from)}</b></span></div>` });
     for (let i = 1; i <= days; i++) { const iso = addDaysISO(d, i), f = feiertage(parseISO(iso).getFullYear()).get(iso); if (f && wdOf(iso) < 5) out.push({ date: iso, ord: 3, html: `<div class="ev-row static">${picto('feiertag')}<span class="ev-date"><b>${WD[wdOf(iso)]}</b>${fmtISO(iso)}</span><span class="ev-main"><strong>${esc(f)}</strong><small>Feiertag – kein Unterricht</small></span><span class="ev-right"><b>${rel(iso)}</b></span></div>` }); }
