@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.6';
+  const APP_VERSION = '6.6.7';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1844,7 +1844,7 @@
     const meta = [course && c ? `<span class="td-c" ${ccStyle(c)}><i></i>${esc(clsLabel(c))}</span>` : '', todoWhen(x)].filter(Boolean).join(' · ');
     return `<div class="todo ${x.done ? 'done' : ''}">
       <button type="button" class="tk" data-action="todoToggle" data-id="${x.id}" aria-label="${x.done ? 'Wieder öffnen' : 'Erledigt'}">${icon('check')}</button>
-      <button type="button" class="td-main" data-action="${x.auto === 'noten' ? 'startNoten' : 'todoEdit'}" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b>${x.nsFor && x.nsFor.length ? `<small class="td-ns">${esc(x.nsFor.map(sid => S.data.students[sid]?.name).filter(Boolean).join(', '))}</small>` : ''}<small>${meta}</small></span></button>
+      <button type="button" class="td-main" data-action="${x.auto === 'noten' ? 'startNoten' : 'todoEdit'}" data-id="${x.id}">${picto('t-' + cat[0], 'sm')}<span class="td-txt"><b>${esc(x.text || cat[2] || cat[1])}</b>${x.nsFor && x.nsFor.length ? `<small class="td-ns">${esc(x.nsFor.map(sid => S.data.students[sid]?.name).filter(Boolean).join(', '))}</small>` : ''}${x.note ? `<small class="td-note">${esc(x.note.split('\n').find(l => l.trim()) || '')}</small>` : ''}<small>${meta}</small></span></button>
     </div>`;
   }
   const todoList = (xs, opts, empty = 'Nichts zu erledigen.') => xs.length ? `<div class="glist todo-list">${xs.map(x => todoRow(x, opts)).join('')}</div>` : `<p class="empty-line">${empty}</p>`;
@@ -1858,6 +1858,7 @@
       title: isNew ? 'Neues To-do' : 'To-do bearbeiten', autofocus: isNew && canHover(),
       body: `<div class="cat-chips" id="t-cats">${TODO_CATS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === cat ? 'on' : ''}">${picto('t-' + k, 'xs')}${l}</button>`).join('')}</div>
         <label class="field"><span>Was ist zu tun?</span><input id="t-text" maxlength="160" value="${esc(td?.text || '')}" placeholder="z. B. Arbeitsblatt 25× kopieren"></label>
+        <label class="field"><span>Notizen (optional)</span><textarea id="t-note" rows="3" maxlength="2000" placeholder="z. B. Seite 34, Nr. 2 · Datei liegt im Ordner Klasse 6">${esc(td?.note || '')}</textarea></label>
         <label class="field"><span>Kurs (optional)</span><select id="t-cls"><option value="">ohne Kurs</option>${cs.map(c => `<option value="${c.id}" ${c.id === cid ? 'selected' : ''}>${esc(clsLabel(c))}</option>`).join('')}</select></label>
         <div class="field"><span>Bis wann?</span><div class="quick-row" id="t-quick"><button type="button" data-q="today">Heute</button><button type="button" data-q="tomorrow">Morgen</button><button type="button" data-q="next">Nächste Stunde</button><button type="button" data-q="none">Ohne Datum</button></div>
           <input type="date" id="t-date" value="${date}"></div>
@@ -1908,7 +1909,8 @@
             if (!text) { modalErr(root, 'Bitte kurz eintragen, was zu tun ist.'); shake(root.querySelector('#t-text')); return false; }
             const d = root.querySelector('#t-date').value;
             const tm = root.querySelector('#t-time').value;
-            return { text, cat, classId: root.querySelector('#t-cls').value || null, date: /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null, time: /^\d{2}:\d{2}$/.test(tm) ? tm : null, morning: root.querySelector('#t-morning').checked };
+            const note = root.querySelector('#t-note').value.trim();
+            return { text, note: note || null, cat, classId: root.querySelector('#t-cls').value || null, date: /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null, time: /^\d{2}:\d{2}$/.test(tm) ? tm : null, morning: root.querySelector('#t-morning').checked };
           }
         }
       ]

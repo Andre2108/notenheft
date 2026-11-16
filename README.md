@@ -1,6 +1,12 @@
-# Notenheft 6.6.6 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.7 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.7 – Notizen zu To-dos
+
+- Im To-do-Fenster gibt es unter „Was ist zu tun?“ das Feld **„Notizen (optional)“** (mehrzeilig, z. B. Seitenzahlen, Dateiort, Anzahl Kopien).
+- In allen To-do-Listen steht die erste Notizzeile klein unter dem Titel; der ganze Text erscheint beim Antippen.
+- Push-Erinnerungen zeigen weiterhin nur den Titel – die Notiz bleibt in der verschlüsselten Sync-Datei.
 
 ## Neu in Version 6.6.6 – Startseite aufgeräumt
 

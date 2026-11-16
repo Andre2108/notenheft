@@ -1229,6 +1229,7 @@ body.swiping main.main { box-shadow: -10px 0 30px rgba(16, 24, 40, .14); backgro
 .td-txt { display: flex; flex-direction: column; min-width: 0; }
 .td-txt b { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .td-txt small { font-size: 13px; color: var(--muted); }
+.td-txt .td-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .td-c { display: inline-flex; align-items: center; gap: 5px; }
 .td-c i { width: 8px; height: 8px; border-radius: 50%; background: var(--cc); }
 .td-late { color: var(--danger); font-weight: 650; }
