@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.7';
+  const APP_VERSION = '6.6.8';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -221,7 +221,7 @@
     notenTab: 'erfassen',
     classId: null,
     weekStart: toISO(mondayOf(new Date())),
-    day: null, mode: 'liste', cardIdx: 0, onlyMissing: false,
+    day: null, mode: 'liste', cardIdx: 0, onlyMissing: false, nameSort: 'liste', autoNext: true, kidQ: '', cardStay: null,
     ovRange: 'hj', ovFrom: null, ovTo: null, ovSort: 'name', ovTab: 'tabelle',
     detailStudent: null,
     courseId: null, courseTab: 'ueberblick',
@@ -297,6 +297,44 @@
   // Reihenfolge: wie in der Kürzel-Tabelle (pos = Zeile, nur eine Zahl, kein Name); Kinder ohne pos danach nach Nachname
   const byListPos = (a, b) => (a.pos > 0 ? 0 : 1) - (b.pos > 0 ? 0 : 1) || (a.pos > 0 && b.pos > 0 ? a.pos - b.pos : 0) || byLastName(a.name, b.name);
   const studentsOf = cid => live(S.data.students).filter(s => s.classId === cid).sort(byListPos);
+  // Beim Eintragen umschaltbar: Kursliste (Kürzel-Tabelle), Nachname oder Vorname – nur Anzeige, gilt je Gerät
+  const NAME_SORTS = [['liste', 'Liste'], ['nach', 'Nachname'], ['vor', 'Vorname']];
+  const firstKey = n => String(n || '').trim();
+  function entryOrder(list) {
+    if (S.nameSort === 'nach') return list.slice().sort((a, b) => byLastName(a.name, b.name) || byListPos(a, b));
+    if (S.nameSort === 'vor') return list.slice().sort((a, b) => collator.compare(firstKey(a.name), firstKey(b.name)) || byListPos(a, b));
+    return list;
+  }
+  const entryStudents = cid => entryOrder(studentsOf(cid));
+  const sortSeg = () => `<div class="seg sortseg" role="group" aria-label="Reihenfolge der Kinder"><span class="sortlbl">Sortieren</span>${NAME_SORTS.map(([k, l]) => `<button type="button" data-action="nameSort" data-k="${k}" class="${(S.nameSort || 'liste') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  // Kindersuche (mündliche Noten): passt, wenn jedes Suchwort am Anfang eines Namensteils steht
+  const kidMatch = (s, q) => { const w = normName(s.name).split(' '); return normName(q).split(' ').filter(Boolean).every(t => w.some(x => x.startsWith(t))); };
+  // Wo wird gerade eingetragen? Liefert die Kinder in Eintragereihenfolge und ob eine Karte (statt Liste) zu sehen ist.
+  function kidCtx() {
+    if (!S.data || S.view !== 'kurse') return null;
+    if (S.courseTab === 'muendlich') { const c = ensureClass(); return c && { key: 'm|' + c.id, students: entryStudents(c.id), card: S.mode === 'karte' }; }
+    if (S.courseTab === 'tests' && S.assessId) {
+      const a = S.data.assessments[S.assessId]; if (!a || a.deleted) return null;
+      return { key: 't|' + a.id, students: entryStudents(a.classId), card: a.type === 'vokabel' && S.vMode !== 'liste', a };
+    }
+    if (S.courseTab === 'zeugnis') { const c = ensureClass(); return c && { key: 'z|' + c.id + '|' + S.zTab, students: entryStudents(c.id), card: false }; }
+    return null;
+  }
+  const kidSearchBox = (students, card) => `<div class="ksearch">${icon('search')}<input type="search" id="ksq" value="${esc(S.kidQ || '')}" placeholder="Kind suchen …" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" aria-label="Kind suchen">
+      <div id="ksq-res" class="ksq-res" role="listbox">${card ? kidHits(students) : ''}</div></div>`;
+  const kidBar = (students, card, extra = '') => `<div class="kidbar">${kidSearchBox(students, card)}${sortSeg()}${extra}</div>`;
+  function applyKidFilter() { // Listen/Tabellen: Zeilen mit data-kid ausblenden, die nicht passen
+    const q = (S.kidQ || '').trim(), byId = new Map((kidCtx()?.students || []).map(s => [s.id, s]));
+    document.querySelectorAll('#app [data-kid]').forEach(r => { const s = byId.get(r.dataset.kid); r.hidden = !!q && !!s && !kidMatch(s, q); });
+  }
+  function focusKid() { // nach dem Eintragen gleich den nächsten Namen tippen
+    const i = document.getElementById('ksq'); if (!i) return;
+    try { i.focus(); } catch { /* egal */ }
+  }
+  function afterKidEntry(always) { // Suche leeren und wieder ins Suchfeld
+    if (!always && !(S.kidQ || '').trim()) return;
+    S.kidQ = ''; render(); focusKid();
+  }
   // Pro Kind, Kurs und Datum zählt genau EIN Eintrag (bei Altbeständen der zuletzt geänderte)
   const entryKey = e => `${e.classId}|${e.studentId}|${e.date}`;
   let entCache = { src: null, list: [] };
@@ -720,6 +758,13 @@
     return '6';
   }
   const fmtPts = p => p == null ? '–' : `${String(p).padStart(2, '0')} P.`;
+  // Grammatiktest (irregular verbs): 30 Lücken, nur ganze Noten – 30–29 = 1, 28–23 = 2, 22–17 = 3, 16–11 = 4, 10–5 = 5, 4–0 = 6
+  const GRAM_MAX = 30;
+  const GRAM_STEPS = [[29, '1'], [23, '2'], [17, '3'], [11, '4'], [5, '5'], [0, '6']];
+  const gramLabel = n => GRAM_STEPS.find(([m]) => n >= m)[1];
+  const isGram = a => !!a && a.scale === 'gram30';
+  const testPts = (a, r) => isGram(a) ? `${r.points}/${GRAM_MAX} richtig` : `${fmtNum(r.points, 1).replace(',0', '')} P.`;
+  const testKind = a => isGram(a) ? 'Grammatiktest' : 'Vokabeltest';
   const snap = (c, v) => v == null ? null : isSII(c) ? pointsToValue(toPoints(v)) : gridValue(gridLabel(v));
   const gradeText = (c, v) => v == null ? '–' : isSII(c) ? fmtPts(toPoints(v)) : gridLabel(v);
   const valCls = v => avgCls(v);
@@ -939,13 +984,15 @@
     if (withUndo) toast('Eintrag gelöscht', { undo: () => commit(d => { d.entries[id] = Object.assign(copy, { updatedAt: now() }); }) });
   }
   function saveUI() {
-    try { localStorage.setItem(LS_UI, JSON.stringify({ classId: S.classId, mode: S.mode, view: S.view, courseId: S.courseId, startMenu: S.startMenu })); } catch { /* egal */ }
+    try { localStorage.setItem(LS_UI, JSON.stringify({ classId: S.classId, mode: S.mode, view: S.view, courseId: S.courseId, startMenu: S.startMenu, nameSort: S.nameSort, autoNext: S.autoNext })); } catch { /* egal */ }
   }
   function loadUI() {
     try {
       const u = JSON.parse(localStorage.getItem(LS_UI) || '{}');
       if (u.classId) S.classId = u.classId;
       if (u.mode) S.mode = u.mode;
+      if (['liste', 'nach', 'vor'].includes(u.nameSort)) S.nameSort = u.nameSort;
+      if (u.autoNext === false) S.autoNext = false;
       if (u.view && ['start', 'heute', 'woche', 'termine', 'kurse', 'jahr', 'mehrarbeit', 'mehr', 'todos'].includes(u.view)) S.view = u.view;
       if (u.startMenu === false) S.startMenu = false;
       if (u.courseId) S.courseId = u.courseId;
@@ -1401,6 +1448,7 @@
      Symbole
      ===================================================================== */
   const ICONS = {
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
     home: '<path d="M3 11 12 3l9 8"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/>',
     today: '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="12" cy="15.5" r="1.6" fill="currentColor"/>',
     grid: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
@@ -1565,9 +1613,12 @@
   const KEEP_SCROLL = '.course-tabs-row, .subtabs, .chipbar, .plan-wrap, .table-wrap, .ycal-wrap';
   function render() {
     const app = $('#app');
+    const kc = kidCtx()?.key || null;
+    if (kc !== S.kidCtxKey) { S.kidCtxKey = kc; S.kidQ = ''; }
     const kept = {};
     app.querySelectorAll(KEEP_SCROLL).forEach((el, i) => { kept[S.view + '|' + el.className.split(' ')[0] + '|' + i] = el.scrollLeft; });
     renderInner();
+    if ((S.kidQ || '').trim()) applyKidFilter();
     app.querySelectorAll(KEEP_SCROLL).forEach((el, i) => {
       const v = kept[S.view + '|' + el.className.split(' ')[0] + '|' + i];
       if (v) el.scrollLeft = v;
@@ -2006,7 +2057,7 @@
       ['newEvent', 'ausfall', 'ban', 'Ausfall', 'Stunde oder ganzer Tag'], ['newEvent', 'pruefung', 'flag', 'Prüfung ansetzen', 'Klassenarbeit, Klausur, Test']];
     if (cs.some(c => partnersOf(c).length)) items.push(['newEvent', 'tausch', 'swap', 'Stunden tauschen', 'gleiche Klasse, anderes Fach']);
     if (cs.some(c => studentsOf(c.id).length)) items.push(['startNoten', '', 'edit', 'Mündliche Noten', 'Wochennote je Kind']);
-    if (cs.some(c => c.vocab)) items.push(['startVocab', '', 'exam', 'Vokabeltest', 'Punkte → Note']);
+    if (cs.some(c => c.vocab)) items.push(['startVocab', '', 'exam', 'Vokabeltest', 'Punkte → Note'], ['startGram', '', 'exam', 'Grammatiktest', 'irregular verbs: Lücken → Note']);
     if (kmKey()) items.push(['kmPaste', '', 'copy', 'Klausurnoten einfügen', 'aus der Korrektur-App']);
     return pageHead('Eintragen', 'Was möchtest du neu eintragen?') + `<div class="start-grid neu-grid">${items.map(([a, type, ic, title, sub]) =>
       `<button type="button" class="start-tile c-neu" data-action="${a}" ${type ? `data-type="${type}"` : ''}>${icon(ic)}<b>${title}</b><small>${sub}</small></button>`).join('')}</div>`;
@@ -2555,7 +2606,7 @@
   function viewErfassen() {
     const cls = ensureClass();
     if (!cls) return emptyState('Noch kein Kurs angelegt', 'Lege zuerst einen Kurs mit den Namen der Kinder an.', `<button type="button" class="btn primary" data-action="newClass">${icon('plus')} Kurs anlegen</button>`);
-    const students = studentsOf(cls.id);
+    const students = entryStudents(cls.id);
     const [from, to] = weekRange();
     const ws = parseISO(S.weekStart);
     const wEnts = entriesOf(cls.id, from, to).sort(byDate);
@@ -2586,7 +2637,8 @@
         <span>${done}/${students.length} mit Eintrag</span>
         <button type="button" class="chip-toggle ${S.onlyMissing ? 'on' : ''}" data-action="toggleMissing">nur ohne Eintrag</button>
         <button type="button" class="chip-toggle" data-action="notHeld">${weeklyMode(cls) ? 'Woche' : 'Tag'} hat nicht stattgefunden</button>
-      </div>`;
+      </div>
+      ${kidBar(students, S.mode === 'karte', S.mode === 'karte' ? `<button type="button" class="chip-toggle ${S.autoNext !== false ? 'on' : ''}" data-action="toggleAutoNext" title="Nach dem Eintragen automatisch zum nächsten Kind">automatisch weiter</button>` : '')}`;
     if (students.length && !weekHasLessons(cls.id, from)) {
       const prev = lessonWeek(cls.id, from, -1);
       return head.replace(/<div class="progress-line">[\s\S]*?<\/div>\s*$/, '') + `<div class="free-card">${icon('sun')}<div><strong>${esc(freeReason(addDaysISO(from, 2)) || 'Kein Unterricht in dieser Woche')}</strong><span>In dieser Woche sind keine mündlichen Noten nötig.</span></div>
@@ -2612,15 +2664,23 @@
     const title = `${labelEntry(e)} · ${wd} ${fmtDate(d)}${e.note ? ' · ' + e.note : ''}`;
     return `<button type="button" class="chip ${cls}${e.note ? ' has-note' : ''}" data-action="editEntry" data-eid="${e.id}" title="${esc(title)}" aria-label="${esc(title)} – bearbeiten">${label}<small>${wd}</small></button>`;
   }
+  function kidHits(students) { // Treffer der Kindersuche in der Kartenansicht
+    const q = (S.kidQ || '').trim();
+    if (!q) return '';
+    const hits = students.filter(s => kidMatch(s, q)).slice(0, 8);
+    return hits.length ? hits.map(s => `<button type="button" class="ksq-hit" data-action="kidPick" data-sid="${s.id}">${esc(s.name)}</button>`).join('')
+      : '<span class="ksq-none">kein Kind gefunden</span>';
+  }
   function listView(students, byS) {
-    const list = S.onlyMissing ? students.filter(s => !byS.has(s.id)) : students;
+    let list = S.onlyMissing ? students.filter(s => !byS.has(s.id)) : students;
+    if ((S.kidQ || '').trim()) { list = students.filter(s => kidMatch(s, S.kidQ)); if (!list.length) return '<div class="done-msg">Kein Kind gefunden.</div>'; }
     if (!list.length) return `<div class="done-msg">${icon('check')} Alle Kinder haben diese Woche einen Eintrag.</div>`;
     return `<div class="list">${list.map(s => {
       const es = byS.get(s.id) || [];
       const g = es.filter(e => e.kind === 'note');
       const avg = g.length > 1 ? mean(g.map(e => e.grade)) : null;
       const cur = es.find(e => e.date === currentDay(s.id));
-      return `<div class="row ${cur ? 'has-today' : ''} ${es.length ? 'is-done' : 'is-open'}" id="st-${s.id}">
+      return `<div class="row ${cur ? 'has-today' : ''} ${es.length ? 'is-done' : 'is-open'}" id="st-${s.id}" data-kid="${s.id}">
         <div class="row-head">
           <span class="rstat" aria-hidden="true">${es.length ? icon('check') : ''}</span>
           <span class="name">${esc(s.name)}${es.length ? '' : ' <em class="open-tag">fehlt</em>'}</span>
@@ -2633,14 +2693,14 @@
   }
   function cardList() {
     const cls = ensureClass(); if (!cls) return [];
-    const students = studentsOf(cls.id);
+    const students = entryStudents(cls.id);
     if (!S.onlyMissing) return students;
     const [a, b] = weekRange();
     const has = new Set(entriesOf(cls.id, a, b).map(e => e.studentId));
-    return students.filter(s => !has.has(s.id));
+    return students.filter(s => !has.has(s.id) || s.id === S.cardStay);
   }
   function cardView(students, byS) {
-    const list = S.onlyMissing ? students.filter(s => !byS.has(s.id)) : students;
+    const list = S.onlyMissing ? students.filter(s => !byS.has(s.id) || s.id === S.cardStay) : students;
     S.cardIdx = Math.max(0, Math.min(S.cardIdx, list.length));
     const cls = S.data.classes[S.classId];
     if (S.cardIdx >= list.length) {
@@ -2819,7 +2879,7 @@
       <section class="panel"><div class="section-head tight"><h3>Entwicklung</h3>${chartRangeSeg()}</div>
         <div class="chart" data-chart="student" data-sid="${sid}"></div></section>
       ${results.length ? `<section class="panel"><h3>Arbeiten/Klausuren</h3><ul class="plain-list">${results.map(({ a, r }) => `<li><div><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)} · ${artLabel(a)}${a.type !== 'vokabel' && weightOf(a) !== 1 ? ` · ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</span></div>
-        <span class="res-chip ${r.value == null ? 'none' : valCls(r.value)}">${r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${fmtNum(r.points, 1).replace(',0', '')} P. · ${esc(r.label)}` : esc(r.label)}</span></li>`).join('')}</ul></section>` : ''}
+        <span class="res-chip ${r.value == null ? 'none' : valCls(r.value)}">${r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${testPts(a, r)} · ${esc(r.label)}` : esc(r.label)}</span></li>`).join('')}</ul></section>` : ''}
       <section class="panel"><h3>Beobachtungen</h3>
         <form data-submit="addObs" class="obs-form"><input type="hidden" name="sid" value="${sid}"><textarea name="text" rows="2" maxlength="600" placeholder="z. B. beteiligt sich seit dem Referat deutlich mehr"></textarea>
           <div class="obs-row"><input type="date" name="date" value="${todayISO()}" aria-label="Datum"><button class="btn primary" type="submit">${icon('plus')} Notieren</button></div></form>
@@ -2900,7 +2960,7 @@
     const dots = weekly.map(p => `<circle cx="${x(p.wk).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4.5" class="cm"/><circle cx="${x(p.wk).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="13" class="hit" data-tip="${esc(tipM(p))}"/>`).join('');
     const marks = pts.map(p => {
       const xx = x(p.wk), yy = y(p.v);
-      const tip = p.a.type === 'vokabel' ? `${p.a.title} (${fmtShort(p.a.date)}): ${fmtNum(p.r.points, 1).replace(',0', '')} P. = ${p.r.label}` : `${p.a.title} (${fmtShort(p.a.date)}): ${p.r.label}`;
+      const tip = p.a.type === 'vokabel' ? `${p.a.title} (${fmtShort(p.a.date)}): ${testPts(p.a, p.r)} = ${p.r.label}` : `${p.a.title} (${fmtShort(p.a.date)}): ${p.r.label}`;
       const shape = p.a.type === 'vokabel'
         ? `<rect x="${(xx - 4.5).toFixed(1)}" y="${(yy - 4.5).toFixed(1)}" width="9" height="9" rx="1.5" class="cv"/>`
         : `<path d="M${xx.toFixed(1)},${(yy - 6.5).toFixed(1)}l6.5,6.5l-6.5,6.5l-6.5,-6.5z" class="cs"/>`;
@@ -2960,10 +3020,10 @@
         ${kmKey() ? `<button type="button" class="btn import-btn" data-action="kmPaste">${icon('copy')} Ergebnis aus der Korrektur-App einfügen</button>` : ''}
         <label class="btn file-btn import-btn">${icon('upload')} Noten aus dem Korrektur-Tool importieren<input type="file" accept=".xlsx" data-change="importKA"></label>
       </section>
-      <section class="section"><div class="section-head"><h2>Vokabeltests</h2>${c.vocab ? `<button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button>` : ''}</div>
+      <section class="section"><div class="section-head"><h2>Vokabel- &amp; Grammatiktests</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Grammatiktest</button></span>` : ''}</div>
         ${c.vocab ? (vok.length ? `<div class="as-list">${vok.map(row).join('')}</div>${vocabMatrix(c, vok, students)}`
-          : '<p class="muted small pad">Noch keine Vokabeltests. Max. 10 Punkte, halbe Punkte möglich – die Note wird automatisch berechnet.</p>')
-          : `<div class="panel slim"><p class="muted small">Vokabeltests sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Vokabeltests einschalten</button></div>`}
+          : '<p class="muted small pad">Noch keine Tests. Vokabeltest: max. 10 Punkte, halbe Punkte möglich. Grammatiktest (irregular verbs): Zahl der richtigen Lücken (von 30) antippen. Die Note wird jeweils automatisch berechnet.</p>')
+          : `<div class="panel slim"><p class="muted small">Vokabel- und Grammatiktests sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
       </section>`;
   }
   function vocabMatrix(c, vok, students) {
@@ -2971,21 +3031,21 @@
     return `<h3 class="sub-h">Übersicht Vokabeltests</h3><div class="table-wrap"><table class="matrix vm">
       <thead><tr><th>Name</th>${vok.map(a => `<th title="${esc(a.title)}">${esc(a.title.length > 10 ? a.title.slice(0, 9) + '…' : a.title)}<small>${fmtISO(a.date)}</small></th>`).join('')}<th>Ø</th></tr></thead>
       <tbody>${students.map(s => {
-        const rs = vok.map(a => resultOf(a.id, s.id));
+        const rs = vok.map(a => resultOf(a.id, s.id)), ra = vok.map(a => [a, resultOf(a.id, s.id)]);
         const vals = rs.filter(r => r && r.value != null).map(r => r.value);
         const avg = mean(vals);
-        return `<tr data-action="studentDetail" data-sid="${s.id}" tabindex="0"><td>${esc(s.name)}</td>${rs.map(r => `<td>${!r ? '' : r.value == null ? '<span class="mcell f">f</span>' : `<span class="mcell ${valCls(r.value)}" title="${fmtNum(r.points, 1)} Punkte">${esc(r.label)}</span>`}</td>`).join('')}
+        return `<tr data-action="studentDetail" data-sid="${s.id}" tabindex="0"><td>${esc(s.name)}</td>${ra.map(([a, r]) => `<td>${!r ? '' : r.value == null ? '<span class="mcell f">f</span>' : `<span class="mcell ${valCls(r.value)}" title="${esc(testPts(a, r))}">${esc(r.label)}</span>`}</td>`).join('')}
           <td>${avg != null ? `<span class="mcell ${valCls(avg)}">${fmtNum(avg, 1)}</span>` : ''}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
   function viewAssessment(a) {
     const c = S.data.classes[a.classId];
-    const students = studentsOf(c.id);
+    const students = entryStudents(c.id);
     const done = students.filter(s => resultOf(a.id, s.id)).length;
     const vals = students.map(s => resultOf(a.id, s.id)).filter(r => r && r.value != null).map(r => r.value);
     const spiegel = [1, 2, 3, 4, 5, 6].map(n => vals.filter(v => Math.round(v + 1e-9) === n || (n === 1 && v < 1)).length);
     let html = `<div class="subhead"><button type="button" class="btn ghost" data-action="closeAssess">${icon('left')} Arbeiten/Klausuren</button></div>
-      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? 'Vokabeltest, max. 10 Punkte' : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
+      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? (isGram(a) ? 'Grammatiktest (irregular verbs), 30 Lücken – zählt wie ein Vokabeltest' : 'Vokabeltest, max. 10 Punkte') : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
         <div class="spiegel">${spiegel.map((n, i) => `<span class="g${i + 1}"><b>${i + 1}</b>${n}</span>`).join('')}<span class="sp-avg">Ø ${vals.length ? fmtNum(mean(vals), 2) : '–'}</span></div></div>
         <button type="button" class="icon-btn plain" data-action="editAssess" data-aid="${a.id}" aria-label="Bearbeiten">${icon('pencil')}</button></section>
       ${a.km ? `<p class="muted small">Noten aus dem Klausurmanager übernommen.${a.kmMissing && a.kmMissing.length ? ` Ohne Kind im Kurs: ${esc(a.kmMissing.join(', '))} – Kurs → Zahnrad → „Aus Kürzel-Tabelle übernehmen“.` : ''}</p>` : ''}
@@ -2993,12 +3053,13 @@
     if (!students.length) return html + emptyState('Keine Kinder in diesem Kurs', '', `<button type="button" class="btn primary" data-action="openCourse" data-cid="${c.id}" data-tab="schueler">Kinder hinzufügen</button>`, 'users');
     if (a.type === 'vokabel') {
       html += `<div class="seg" style="margin-bottom:12px"><button type="button" data-action="vMode" data-m="karte" class="${S.vMode !== 'liste' ? 'on' : ''}">${icon('cards')}<span>Karten</span></button><button type="button" data-action="vMode" data-m="liste" class="${S.vMode === 'liste' ? 'on' : ''}">${icon('list')}<span>Liste</span></button></div>`;
+      html += kidBar(students, S.vMode !== 'liste');
       if (S.vMode !== 'liste') return html + vocabCard(a, c, students);
-    }
+    } else html += kidBar(students, false);
     return html + `<div class="list">${students.map((s, i) => {
       const r = resultOf(a.id, s.id);
-      const txt = !r ? (a.type === 'vokabel' ? '+ Punkte' : '+ Note') : r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${fmtNum(r.points, 1).replace(',0', '')} P. · ${esc(r.label)}` : esc(r.label);
-      return `<div class="row slim-row"><span class="name">${esc(s.name)}${r && r.fokus ? `<small class="muted fokus">Fokus: ${esc(r.fokus)}</small>` : ''}</span>
+      const txt = !r ? (a.type === 'vokabel' ? (isGram(a) ? '+ Lücken' : '+ Punkte') : '+ Note') : r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${testPts(a, r)} · ${esc(r.label)}` : esc(r.label);
+      return `<div class="row slim-row" id="st-${s.id}" data-kid="${s.id}"><span class="name">${esc(s.name)}${r && r.fokus ? `<small class="muted fokus">Fokus: ${esc(r.fokus)}</small>` : ''}</span>
         <button type="button" class="res-chip big ${!r ? 'empty' : r.value == null ? 'none' : valCls(r.value)}" data-action="${a.type === 'vokabel' ? 'vocabGo' : 'pickGrade'}" data-aid="${a.id}" data-sid="${s.id}" data-i="${i}">${txt}</button></div>`;
     }).join('')}</div>`;
   }
@@ -3017,12 +3078,19 @@
         <button type="button" class="icon-btn" data-action="vocabGo" data-i="${i + 1}" aria-label="Nächstes Kind">${icon('right')}</button>
       </div>
       <div class="card-name">${esc(s.name)}</div>
-      <div class="card-info">${r ? (r.value == null ? '<span class="res-chip none">fehlte</span>' : `<span class="res-chip ${valCls(r.value)}">${fmtNum(r.points, 1).replace(',0', '')} P. → ${esc(r.label)}</span>`) : '<span class="muted">noch nicht eingetragen</span>'}</div>
-      <div class="pts-grid">${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(p => `<button type="button" class="pbtn" data-action="vocabPts" data-p="${p}" ${S.vHalf && p === 10 ? 'disabled' : ''}>${p}${S.vHalf && p < 10 ? '<small>,5</small>' : ''}<em>${vocabLabel(p + (S.vHalf && p < 10 ? 0.5 : 0))}</em></button>`).join('')}
+      <div class="card-info">${r ? (r.value == null ? '<span class="res-chip none">fehlte</span>' : `<span class="res-chip ${valCls(r.value)}">${testPts(a, r)} → Note ${esc(r.label)}</span>`) : '<span class="muted">noch nicht eingetragen</span>'}</div>
+      ${isGram(a) ? gramPad(r) : `<div class="pts-grid">${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(p => `<button type="button" class="pbtn" data-action="vocabPts" data-p="${p}" ${S.vHalf && p === 10 ? 'disabled' : ''}>${p}${S.vHalf && p < 10 ? '<small>,5</small>' : ''}<em>${vocabLabel(p + (S.vHalf && p < 10 ? 0.5 : 0))}</em></button>`).join('')}
         <button type="button" class="pbtn half ${S.vHalf ? 'on' : ''}" data-action="vocabHalf">+0,5</button></div>
       <div class="card-extra two"><button type="button" class="btn" data-action="vocabAbsent">fehlte</button><button type="button" class="btn" data-action="vocabClear" ${r ? '' : 'disabled'}>Eintrag löschen</button></div>
-      <p class="hint">Halbe Punkte: erst „+0,5“ antippen, dann die ganze Zahl. Die Note steht klein unter jeder Zahl.</p>
+      <p class="hint">Halbe Punkte: erst „+0,5“ antippen, dann die ganze Zahl. Die Note steht klein unter jeder Zahl.</p>`}
     </div>`;
+  }
+  function gramPad(r) { // Zahl der richtigen Lücken antippen – darunter steht die Note
+    const cur = r && r.value != null ? r.points : null;
+    return `<p class="gram-q">Wie viele Lücken richtig?</p>
+      <div class="pts-grid gram">${Array.from({ length: GRAM_MAX + 1 }, (_, i) => GRAM_MAX - i).map(n => `<button type="button" class="pbtn gp g${gramLabel(n)} ${cur === n ? 'cur' : ''}" data-action="gramPts" data-p="${n}" aria-label="${n} richtig, Note ${gramLabel(n)}">${n}<em>Note ${gramLabel(n)}</em></button>`).join('')}</div>
+      <div class="card-extra two"><button type="button" class="btn" data-action="vocabAbsent">fehlte</button><button type="button" class="btn" data-action="vocabClear" ${r ? '' : 'disabled'}>Eintrag löschen</button></div>
+      <p class="hint">${GRAM_STEPS.map(([m], i) => `${i ? GRAM_STEPS[i - 1][0] - 1 : GRAM_MAX}–${m} = ${GRAM_STEPS[i][1]}`).join(' · ')} (richtige Lücken = Note). Rechtschreibfehler zählen als Fehler.</p>`;
   }
   function setResult(a, sid, patch) {
     const id = a.id + '|' + sid;
@@ -3051,33 +3119,34 @@
       actions: [...(r ? [{ label: 'Entfernen', cls: 'danger', value: '__del' }] : []), { label: 'nicht mitgeschrieben', value: '__nt' }, { label: 'Abbrechen', value: null }]
     });
     if (!res) return;
-    if (res === '__del') return commit(d => { d.results[a.id + '|' + s.id] = { id: a.id + '|' + s.id, deleted: true, updatedAt: now() }; nsTodoSync(d, d.assessments[a.id]); });
-    if (res === '__nt') return setResult(a, s.id, { value: null, label: 'nt' });
-    setResult(a, s.id, { value: gridValue(res), label: res });
+    if (res === '__del') commit(d => { d.results[a.id + '|' + s.id] = { id: a.id + '|' + s.id, deleted: true, updatedAt: now() }; nsTodoSync(d, d.assessments[a.id]); });
+    else if (res === '__nt') setResult(a, s.id, { value: null, label: 'nt' });
+    else { setResult(a, s.id, { value: gridValue(res), label: res }); toast(`${s.name}: ${res}`); }
+    afterKidEntry(true);
   }
   function vocabSave(points) {
     const a = S.data.assessments[S.assessId];
-    const students = studentsOf(a.classId);
+    const students = entryStudents(a.classId);
     const s = students[S.vIdx || 0];
     if (!s) return;
-    const label = vocabLabel(points);
+    const label = isGram(a) ? gramLabel(points) : vocabLabel(points);
     setResult(a, s.id, { points, label, value: gridValue(label) });
     S.vHalf = false;
-    S.vIdx = (S.vIdx || 0) + 1;
-    render();
-    toast(`${s.name}: ${fmtNum(points, 1).replace(',0', '')} P. → ${label}`);
+    afterKidEntry(true); // Kind bleibt mit Ergebnis stehen, das Suchfeld ist bereit für den nächsten Namen
+    toast(`${s.name}: ${isGram(a) ? `${points}/${GRAM_MAX} richtig` : `${fmtNum(points, 1).replace(',0', '')} P.`} → Note ${label}`);
   }
   async function editAssessment(a, preset = {}) {
     const isNew = !a;
     const type = a?.type || preset.type || 'schriftlich';
+    const gram = a ? isGram(a) : preset.scale === 'gram30';
     const art = a?.art || preset.art || (/mündlich/i.test(preset.title || '') ? 'muendlich' : 'schriftlich');
     const wNow = weightOf(a);
     const c = S.data.classes[a?.classId || preset.cid || S.classId];
-    const nVok = assessmentsOf(c.id, 'vokabel').length;
+    const nVok = assessmentsOf(c.id, 'vokabel').filter(x => isGram(x) === gram).length;
     const res = await openModal({
-      title: isNew ? (type === 'vokabel' ? 'Neuer Vokabeltest' : 'Neue schriftliche Leistung') : 'Bearbeiten',
+      title: isNew ? (type === 'vokabel' ? (gram ? 'Neuer Grammatiktest (irregular verbs)' : 'Neuer Vokabeltest') : 'Neue schriftliche Leistung') : 'Bearbeiten',
       autofocus: canHover(),
-      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? `Vokabeltest ${nVok + 1}` : ''))}" placeholder="${type === 'vokabel' ? 'z. B. Vokabeltest Unit 1' : art === 'muendlich' ? 'z. B. Mündliche Prüfung' : 'z. B. Klassenarbeit 1'}"></label>
+      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? (gram ? `Grammatiktest ${nVok + 1}` : `Vokabeltest ${nVok + 1}`) : ''))}" placeholder="${type === 'vokabel' ? (gram ? 'z. B. Irregular verbs 1' : 'z. B. Vokabeltest Unit 1') : art === 'muendlich' ? 'z. B. Mündliche Prüfung' : 'z. B. Klassenarbeit 1'}"></label>
         <label class="field"><span>Datum</span><input type="date" id="m-d" value="${a?.date || preset.date || todayISO()}"></label>
         ${type !== 'vokabel' ? `<div class="two-col"><label class="field"><span>Art</span><select id="m-art"><option value="schriftlich" ${art !== 'muendlich' ? 'selected' : ''}>Klassenarbeit / Klausur</option><option value="muendlich" ${art === 'muendlich' ? 'selected' : ''}>Mündliche Prüfung</option></select></label>
           <label class="field"><span>Gewichtung</span><select id="m-w">${[0.5, 1, 1.5, 2, 3].map(w => `<option value="${w}" ${Math.abs(w - wNow) < 1e-9 ? 'selected' : ''}>×${String(w).replace('.', ',')}${w === 1 ? ' (normal)' : ''}</option>`).join('')}</select></label></div>` : ''}`,
@@ -3096,7 +3165,7 @@
       return null;
     }
     const id = a?.id || uid();
-    commit(d => { d.assessments[id] = Object.assign({}, a || { id, classId: c.id, type, eventId: preset.eventId || null }, res, { updatedAt: now() }); });
+    commit(d => { d.assessments[id] = Object.assign({}, a || Object.assign({ id, classId: c.id, type, eventId: preset.eventId || null }, gram ? { scale: 'gram30' } : {}), res, { updatedAt: now() }); });
     return id;
   }
 
@@ -3827,13 +3896,14 @@
     if (zt === 'warn') return html + viewWarn(c);
     if (zt === 'somi') return html + viewSomiQ(c);
     const t = terms.find(x => x.key === S.zTerm);
-    const students = studentsOf(c.id);
+    const students = entryStudents(c.id);
     if (!students.length) return html + emptyState('Keine Kinder in diesem Kurs', '', '', 'users');
     const rows = students.map(s => ({ s, r: calc(s, t, c) }));
     html += `<p class="muted small range-info">${isSII(c) ? 'Oberstufe: Zeugnis in Punkten. ' : 'Sek I: Noten mit Tendenz (1,7 = 2+ · 2,0 = 2 · 2,3 = 2-). '}Gewichtung: schriftlich 50 % · SoMi 50 %${c.vocab ? ' (SoMi inkl. Vokabeltests, anteilig nach Anzahl)' : ''}${t.parts ? ' · SoMi = Schnitt der beiden Quartale (eingetragene SoMi-Quartalsnoten gehen vor, Stern *)' : ''}${t.quarter && sii ? ' · SoMi = eingetragene SoMi-Quartalsnote (*), sonst berechnet' : ''}. Zeile antippen zum Korrigieren.</p>
+      ${kidBar(students, false)}
       <div class="table-wrap"><table class="ov zt">
       <thead><tr><th>Name</th><th class="num">SoMi</th><th class="num">Schriftl.</th><th class="num">Vorschlag</th><th class="num">Zeugnis</th><th>Korrektur</th><th>Begründung</th></tr></thead>
-      <tbody>${rows.map(({ s, r }) => `<tr data-action="zOverride" data-sid="${s.id}" tabindex="0" class="${r.override ? 'ovr' : ''}">
+      <tbody>${rows.map(({ s, r }) => `<tr data-action="zOverride" data-sid="${s.id}" data-kid="${s.id}" tabindex="0" class="${r.override ? 'ovr' : ''}">
         <td>${esc(s.name)}</td>
         <td class="num">${r.somi != null ? fmtNum(r.somi, 2) : '–'}${r.somiSet ? '*' : ''}${r.vCount ? `<small class="sub">Vok. ${Math.round(r.vShare * 100)} %</small>` : ''}${r.quarterSomi ? `<small class="sub">${r.quarterSomi.map((q, i) => q != null ? fmtNum(q, 1) + (r.quarterSet[i] ? '*' : '') : '–').join(' / ')}</small>` : ''}</td>
         <td class="num">${r.schr != null ? fmtNum(r.schr, 2) : '–'}</td>
@@ -3892,15 +3962,16 @@
   }
   function viewSomiQ(c) {
     const q = termsFor(levelOf(c)).find(x => x.key === S.sqTerm);
-    const students = studentsOf(c.id);
+    const students = entryStudents(c.id);
     if (!students.length) return emptyState('Keine Kinder in diesem Kurs', '', '', 'users');
     const unit = n => plural(n, S.data.settings.weighting === 'woche' ? 'Woche' : 'Note', S.data.settings.weighting === 'woche' ? 'Wochen' : 'Noten');
     const rows = students.map(s => { const r = calcRaw(s, c, q.from, q.to); return { s, r, sug: snap(c, r.somi), set: somiQOf(c, s, q.key) }; });
     const done = rows.filter(x => x.set).length;
     return `<p class="muted small range-info">SoMi-Quartalsnote in Punkten für das ${q.label}. Vorschlag = Schnitt der mündlichen Noten${c.vocab ? ' und Vokabeltests' : ''} im Quartal. Eingetragene Noten zählen fürs Halbjahreszeugnis (SoMi = Schnitt der beiden Quartale) und werden mitsynchronisiert. Zeile antippen zum Eintragen · ${done} von ${students.length} eingetragen.</p>
+      ${kidBar(students, false)}
       <div class="table-wrap"><table class="ov zt">
       <thead><tr><th>Name</th><th class="num">Mündlich Ø</th>${c.vocab ? '<th class="num">Vok. Ø</th>' : ''}<th class="num">Vorschlag</th><th class="num">Quartalsnote SoMi</th><th>Bemerkung</th></tr></thead>
-      <tbody>${rows.map(({ s, r, sug, set }) => `<tr data-action="zSomiQ" data-sid="${s.id}" tabindex="0" class="${set ? 'ovr' : ''}">
+      <tbody>${rows.map(({ s, r, sug, set }) => `<tr data-action="zSomiQ" data-sid="${s.id}" data-kid="${s.id}" tabindex="0" class="${set ? 'ovr' : ''}">
         <td>${esc(s.name)}</td>
         <td class="num">${r.mAvg != null ? fmtNum(r.mAvg, 2) : '–'}<small class="sub">${unit(r.mCount)}</small></td>
         ${c.vocab ? `<td class="num">${r.vAvg != null ? fmtNum(r.vAvg, 2) : '–'}</td>` : ''}
@@ -4004,7 +4075,7 @@
       ${terms.map(t => { const r = calc(s, t, c); return `<tr class="${t.zeugnis ? 'z' : ''}"><td>${t.label}</td><td>${r.mAvg != null ? fmtNum(r.mAvg, 2) : '–'}</td>${c.vocab ? `<td>${r.vAvg != null ? fmtNum(r.vAvg, 2) : '–'}</td>` : ''}<td>${r.somi != null ? fmtNum(r.somi, 2) : '–'}</td><td>${r.schr != null ? fmtNum(r.schr, 2) : '–'}</td><td><strong>${gradeText(c, r.final)}</strong>${r.override ? ' (korrigiert)' : ''}</td></tr>`; }).join('')}
       </tbody></table>
       <h2>Entwicklung im Schuljahr</h2><div class="pd-chart">${studentChartSVG(s, c, 680, 'sj')}</div>
-      ${results.length ? `<h2>Tests &amp; Arbeiten</h2><table class="pt"><tbody>${results.map(({ a, r }) => `<tr><td>${fmtISO(a.date, true)}</td><td>${esc(a.title)}</td><td>${r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${fmtNum(r.points, 1)} P. – ${esc(r.label)}` : esc(r.label)}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${results.length ? `<h2>Tests &amp; Arbeiten</h2><table class="pt"><tbody>${results.map(({ a, r }) => `<tr><td>${fmtISO(a.date, true)}</td><td>${esc(a.title)}</td><td>${r.value == null ? 'fehlte' : a.type === 'vokabel' ? `${testPts(a, r)} – ${esc(r.label)}` : esc(r.label)}</td></tr>`).join('')}</tbody></table>` : ''}
       <h2>Beobachtungen</h2>${obs.length ? `<ul>${obs.map(o => `<li><b>${fmtISO(o.date, true)}:</b> ${esc(o.text)}</li>`).join('')}</ul>` : '<p>–</p>'}
       <h2>Gesprächsnotizen</h2><div class="pd-lines"></div>`;
     printDoc('Elternsprechtag', html);
@@ -4520,7 +4591,10 @@
     const list = cardList();
     const s = list[S.cardIdx];
     if (!s) return;
-    if (!S.onlyMissing) S.cardIdx++;
+    // Weiter zum nächsten Kind – außer „automatisch weiter“ ist aus oder das Kind kam über die Suche
+    const stay = S.autoNext === false || S.cardStay === s.id;
+    S.cardStay = stay ? s.id : null;
+    if (!S.onlyMissing && !stay) S.cardIdx++;
     const e = addEntry({ sid: s.id, cid: s.classId, kind, grade, date: currentDay(s.id, s.classId) });
     toast(entryToast(e, s.name), { undo: () => undoEntry(e) });
   }
@@ -5394,6 +5468,13 @@
       openCourseTab(cid, 'tests');
       editAssessment(null, { cid, type: 'vokabel' });
     },
+    async startGram() {
+      const cid = await pickCourse('Grammatiktest – welcher Kurs?', classesSorted().filter(c => c.vocab && studentsOf(c.id).length));
+      if (!cid) return;
+      openCourseTab(cid, 'tests');
+      const id = await editAssessment(null, { cid, type: 'vokabel', scale: 'gram30' });
+      if (id) { S.assessId = id; S.vIdx = 0; S.vMode = 'karte'; render(); }
+    },
     async startZeugnis() {
       const cid = await pickCourse('Zeugnisnoten – welcher Kurs?', classesSorted().filter(c => studentsOf(c.id).length), false);
       if (cid) { S.zTab = 'noten'; S.zTerm = null; openCourseTab(cid, 'zeugnis'); }
@@ -5485,7 +5566,7 @@
     notenTab(d) { S.notenTab = d.tab; S.detailStudent = null; S.assessId = null; render(); },
     openAssess(d) { S.assessId = d.aid; S.vIdx = 0; S.vHalf = false; S.vMode = 'karte'; render(); window.scrollTo(0, 0); },
     closeAssess() { S.assessId = null; render(); },
-    async newAssess(d) { const id = await editAssessment(null, { type: d.type, art: d.art, cid: S.classId }); if (id) { S.assessId = id; S.vIdx = 0; S.vMode = 'karte'; render(); } },
+    async newAssess(d) { const id = await editAssessment(null, { type: d.type, art: d.art, scale: d.scale, cid: S.classId }); if (id) { S.assessId = id; S.vIdx = 0; S.vMode = 'karte'; render(); } },
     async assessFromEvent(d) {
       const e = S.data.events[d.eid];
       const n = assessmentsOf(e.classId, 'schriftlich').length + 1;
@@ -5497,21 +5578,22 @@
     vMode(d) { S.vMode = d.m; render(); },
     vocabGo(d) { S.vMode = 'karte'; S.vIdx = Math.max(0, +d.i || 0); S.vHalf = false; render(); },
     vocabPts(d) { vocabSave(+d.p + (S.vHalf && +d.p < 10 ? 0.5 : 0)); },
+    gramPts(d) { vocabSave(+d.p); },
     vocabHalf() { S.vHalf = !S.vHalf; render(); },
     vocabAbsent() {
-      const a = S.data.assessments[S.assessId]; const s = studentsOf(a.classId)[S.vIdx || 0]; if (!s) return;
-      setResult(a, s.id, { points: null, label: 'fehlte', value: null }); S.vIdx++; S.vHalf = false; render();
+      const a = S.data.assessments[S.assessId]; const s = entryStudents(a.classId)[S.vIdx || 0]; if (!s) return;
+      setResult(a, s.id, { points: null, label: 'fehlte', value: null }); S.vHalf = false; afterKidEntry(true);
     },
     vocabClear() {
-      const a = S.data.assessments[S.assessId]; const s = studentsOf(a.classId)[S.vIdx || 0]; if (!s) return;
+      const a = S.data.assessments[S.assessId]; const s = entryStudents(a.classId)[S.vIdx || 0]; if (!s) return;
       commit(dd => { dd.results[a.id + '|' + s.id] = { id: a.id + '|' + s.id, deleted: true, updatedAt: now() }; });
     },
     pickGrade(d) { pickGrade(S.data.assessments[d.aid], S.data.students[d.sid]); },
     zTab(d) { S.zTab = d.tab; render(); },
-    zSomiQ(d) { const c = ensureClass(); somiQDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.sqTerm)); },
+    async zSomiQ(d) { const c = ensureClass(); await somiQDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.sqTerm)); afterKidEntry(); },
     somiQAll() { somiQAll(); },
     exportSomiQ() { exportSomiQ(); },
-    zOverride(d) { const c = ensureClass(); overrideDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.zTerm)); },
+    async zOverride(d) { const c = ensureClass(); await overrideDialog(c, S.data.students[d.sid], termsFor(levelOf(c)).find(x => x.key === S.zTerm)); afterKidEntry(); },
     printConference() { printConference(); },
     exportZeugnis() { exportZeugnis(); },
     printWarned() { printWarned(); },
@@ -5577,9 +5659,33 @@
     weekGo(d) { S.weekStart = d.ws; S.day = null; S.cardIdx = 0; render(); },
     weekToday() { S.weekStart = toISO(mondayOf(new Date())); S.day = null; S.cardIdx = 0; render(); },
     setDay(d) { S.day = d.day; render(); },
-    setMode(d) { S.mode = d.mode; S.cardIdx = 0; saveUI(); render(); },
+    setMode(d) { S.mode = d.mode; S.cardIdx = 0; S.cardStay = null; saveUI(); render(); },
     toggleMissing() { S.onlyMissing = !S.onlyMissing; S.cardIdx = 0; render(); },
-    addGrade(d) { quickAdd(d.sid, 'note', +d.g); },
+    addGrade(d) {
+      const hadQ = !!(S.kidQ || '').trim();
+      S.kidQ = ''; // nach dem Eintragen aus der Suche wieder die ganze Liste
+      quickAdd(d.sid, 'note', +d.g);
+      if (hadQ) { render(); requestAnimationFrame(() => document.getElementById('st-' + d.sid)?.scrollIntoView({ block: 'center' })); }
+    },
+    nameSort(d) {
+      // Kind behalten, das gerade dran ist
+      const keepV = S.assessId && S.data.assessments[S.assessId] ? entryStudents(S.data.assessments[S.assessId].classId)[S.vIdx || 0] : null;
+      const keepC = cardList()[S.cardIdx];
+      S.nameSort = d.k; saveUI();
+      if (keepV) S.vIdx = Math.max(0, entryStudents(keepV.classId).findIndex(s => s.id === keepV.id));
+      if (keepC) S.cardIdx = Math.max(0, cardList().findIndex(s => s.id === keepC.id));
+      render();
+    },
+    toggleAutoNext() { S.autoNext = S.autoNext === false; S.cardStay = null; saveUI(); render(); toast(S.autoNext ? 'Nach dem Eintragen geht es zum nächsten Kind' : 'Das Kind bleibt nach dem Eintragen stehen'); },
+    kidPick(d) {
+      const ctx = kidCtx();
+      if (ctx && ctx.a) { S.vIdx = Math.max(0, ctx.students.findIndex(s => s.id === d.sid)); S.vHalf = false; S.kidQ = ''; render(); return; }
+      if (S.onlyMissing && !cardList().some(s => s.id === d.sid)) S.onlyMissing = false;
+      S.cardStay = d.sid;
+      S.cardIdx = Math.max(0, cardList().findIndex(s => s.id === d.sid));
+      S.kidQ = '';
+      render();
+    },
     more(d) { editEntry(null, d.sid); },
     editEntry(d) { const e = S.data.entries[d.eid]; if (e && !e.deleted) editEntry(e); },
     cardGrade(d) { cardAdd('note', +d.g); },
@@ -5591,9 +5697,9 @@
       const r = await editEntry(null, s.id);
       if (r === 'saved' && !S.onlyMissing) { S.cardIdx++; render(); }
     },
-    cardPrev() { if (S.cardIdx > 0) { S.cardIdx--; render(); } },
-    cardNext() { if (S.cardIdx < cardList().length) { S.cardIdx++; render(); } },
-    cardRestart() { S.cardIdx = 0; render(); },
+    cardPrev() { S.cardStay = null; if (S.cardIdx > 0) { S.cardIdx--; render(); } },
+    cardNext() { S.cardStay = null; if (S.cardIdx < cardList().length) { S.cardIdx++; render(); } },
+    cardRestart() { S.cardStay = null; S.cardIdx = 0; render(); },
     ovTab(d) { S.ovTab = d.tab; render(); },
     ovSort(d) { S.ovSort = d.k; render(); },
     studentDetail(d) { S.detailFrom = S.notenTab === 'uebersicht' ? null : S.notenTab; S.notenTab = 'uebersicht'; S.detailStudent = d.sid; render(); window.scrollTo(0, 0); },
@@ -5795,6 +5901,31 @@
     const el = e.target.closest('[data-change]');
     if (!el || !$('#app').contains(el)) return;
     C[el.dataset.change]?.(el.value, el, e);
+  });
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'ksq' || !$('#app').contains(e.target)) return;
+    S.kidQ = e.target.value;
+    const ctx = kidCtx(); if (!ctx) return;
+    const q = S.kidQ.trim();
+    if (ctx.card) { $('#ksq-res').innerHTML = kidHits(ctx.students); return; }
+    applyKidFilter();
+    // „nur ohne Eintrag“ (mündlich) blendet Kinder ganz aus – dann neu aufbauen, damit die Suche alle findet
+    const fehlt = q && ctx.students.some(s => kidMatch(s, q) && !document.querySelector(`#app [data-kid="${s.id}"]`));
+    if (fehlt || (!q && S.courseTab === 'muendlich' && S.onlyMissing)) { render(); const i = $('#ksq'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.target.id !== 'ksq') return;
+    if (e.key === 'Escape') { S.kidQ = ''; render(); return; }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = $('#ksq-res .ksq-hit');
+    if (first) { first.click(); return; }
+    const row = [...document.querySelectorAll('#app [data-kid]')].find(r => !r.hidden);
+    if (!row) return;
+    const open = row.matches('[data-action]') ? row : row.querySelector('.res-chip.big');
+    e.target.blur();
+    if (open) open.click(); // Notendialog des Kindes öffnen
+    else { row.scrollIntoView({ block: 'center' }); row.classList.add('flash'); }
   });
   document.addEventListener('submit', e => {
     const f = e.target.closest('form[data-submit]');

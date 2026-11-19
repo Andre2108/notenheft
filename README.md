@@ -1,6 +1,15 @@
-# Notenheft 6.6.7 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 6.6.8 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 6.6.8 – Grammatiktests, Kindersuche, Sortierung
+
+- **Grammatiktest (irregular verbs):** Kurs → Arbeiten/Klausuren → „+ Grammatiktest“ (oder Eintragen → Grammatiktest). Je Kind die **Zahl der richtigen Lücken (0–30)** antippen, unter jeder Zahl steht die Note: 30–29 = 1 · 28–23 = 2 · 22–17 = 3 · 16–11 = 4 · 10–5 = 5 · 4–0 = 6. Rechtschreibfehler zählen als Fehler. Zählt wie ein Vokabeltest anteilig zur SoMi-Note.
+- **Kind suchen überall, wo Noten eingetragen werden:** mündliche Noten, Klassenarbeiten/Klausuren, Vokabel- und Grammatiktests, Zeugnisnoten und SoMi-Quartalsnoten. Es reicht der Anfang von Vor- oder Nachname (z. B. „mul“ → Müller). In Listen blendet die Suche die übrigen Kinder aus, in Karten öffnet ein Treffer die Karte; **Enter** nimmt den ersten Treffer bzw. öffnet den Notendialog.
+- **Tests und Klassenarbeiten:** Nach dem Eintragen springt die App **nicht** zum nächsten Kind. Das Kind bleibt mit Ergebnis stehen (z. B. „24/30 richtig → Note 2“) und das **Suchfeld ist sofort bereit** für den nächsten Namen.
+- **Mündliche Noten:** Ein über die Suche gewähltes Kind bleibt nach der Note stehen; sonst geht es wie bisher automatisch weiter.
+- **„automatisch weiter“** (mündlich, Kartenansicht) lässt sich ausschalten – dann bleibt jedes Kind nach dem Eintragen stehen.
+- **Sortieren nach Liste, Nachname oder Vorname** beim Eintragen (mündlich, Arbeiten, Vokabel- und Grammatiktests, Zeugnis), jederzeit umschaltbar; das gerade aufgerufene Kind bleibt dabei. Die Wahl merkt sich das Gerät.
 
 ## Neu in Version 6.6.7 – Notizen zu To-dos
 
