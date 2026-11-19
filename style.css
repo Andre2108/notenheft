@@ -1671,3 +1671,58 @@ body { font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "SF Pro 
   #toast { left: calc(50% + 118px); }
 }
 @media (max-width: 430px) { .topbar .brand span { display: none; } .topbar { gap: 8px; } }
+
+/* =====================================================================
+   Design B, Stufe 3 (7.2): Mündlich-Raster, Wochenplan im Laptop-Cockpit
+   ===================================================================== */
+.raster { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 4px 0 12px; }
+.rg { display: grid; grid-template-columns: minmax(0, 1fr) repeat(var(--cols, 1), minmax(44px, 64px)) 46px; align-items: center; min-height: 42px; border-bottom: 1px solid #eef1f4; }
+.rg:last-child { border-bottom: 0; }
+.rg[hidden] { display: none; }
+.rg-h { min-height: 32px; background: var(--card-2); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; color: #334155; }
+.rg-h span { text-align: center; }
+.rg-h span:first-child { text-align: left; padding-left: 10px; }
+.rg-h .cur { color: var(--accent); }
+.rg.sel { background: color-mix(in srgb, var(--accent) 6%, #fff); }
+.rn { padding: 0 10px; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rg.open .rn { color: #c2410c; }
+.rc { height: 36px; margin: 3px; border: 0; border-radius: 7px; background: none; padding: 0; font-size: 16px; font-weight: 700; color: var(--gc, var(--muted)); font-variant-numeric: tabular-nums; }
+.rc.miss { border: 1.5px dashed #fb923c; }
+.rc.o { color: var(--muted); }
+.rc.on { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); color: var(--accent); }
+.ra { text-align: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rpad {
+  position: sticky; bottom: calc(var(--tabh) + env(safe-area-inset-bottom)); z-index: 15;
+  margin: 0 -16px; padding: 10px 16px 12px; background: var(--card); border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 16px rgba(15, 23, 42, .07); display: flex; flex-direction: column; gap: 8px;
+}
+@media (min-width: 860px) { .rpad { bottom: 0; margin: 0; border: 1px solid var(--line); border-radius: 12px 12px 0 0; } }
+.rpad-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+.rpad-auto { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; min-height: 32px; font-size: 12px; font-weight: 600; color: #334155; }
+.rpad-auto i { width: 34px; height: 20px; border-radius: 99px; background: #cbd5e1; position: relative; flex: none; }
+.rpad-auto i::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .12s; }
+.rpad-auto.on i { background: var(--accent); }
+.rpad-auto.on i::after { left: 16px; }
+.rpad-keys { display: flex; gap: 8px; }
+.rpad-g { flex: 6; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 10px; background: #f1f5f9; }
+.rpad-g .gbtn { height: 50px; font-size: 21px; }
+.rpad-o { flex: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 10px; background: #f1f5f9; }
+.rpad-o button { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 50px; padding: 0; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--text); }
+.rpad-o b { font-size: 18px; line-height: 1.1; }
+.rpad-o small { font-size: 10px; color: var(--muted); }
+.rpad-x { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.rpad-x .btn { min-height: 38px; padding: 0 4px; font-size: 13px; border-radius: 8px; }
+
+.ck-week { display: none; }
+@media (min-width: 1100px) { .ck-week { display: block; } }
+.ckw { display: flex; flex-direction: column; gap: 3px; padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.ckw-g { display: grid; grid-template-columns: 22px repeat(5, minmax(0, 1fr)); gap: 3px; }
+.ckw-h span { padding: 3px 0; border-radius: 5px; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+.ckw-h .today { background: var(--accent); color: #fff; }
+.ckw-n { display: grid; place-items: center; font-size: 11px; color: #64748b; }
+.ckw-c { height: 26px; padding: 0 2px; border: 0; border-radius: 5px; background: var(--card-2); font-size: 11px; font-weight: 700; color: var(--text); overflow: hidden; white-space: nowrap; }
+button.ckw-c { background: color-mix(in srgb, var(--cc) 35%, #fff); }
+button.ckw-c.x { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
+.ckw-c.off { background: repeating-linear-gradient(45deg, #f1f5f9 0 4px, #fff 4px 8px); }
+body:has(.rpad) #toast { bottom: calc(var(--tabh) + env(safe-area-inset-bottom) + 200px); }
+@media (min-width: 860px) { body:has(.rpad) #toast { bottom: 200px; } }

@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.1';
+  const APP_VERSION = '7.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2071,6 +2071,22 @@
     const head = `<div class="section-head"><h2>Offen</h2><span class="muted small">${rows.length ? `${rows.length} · nach Dringlichkeit` : ''}</span></div>`;
     return `<section class="section ck-offen">${head}${rows.length ? `<div class="ck-list">${rows.join('')}</div>` : `<p class="empty-line">${icon('check')} Nichts offen – alles erledigt.</p>`}</section>`;
   }
+  function cockpitWeek(t) { // nur am Laptop sichtbar: Mo–Fr × Stunden, Zelle öffnet die Stunde
+    const ws = weekKey(t), days = [0, 1, 2, 3, 4].map(i => addDaysISO(ws, i));
+    const per = days.map(d => freeReason(d) ? null : lessonsOn(d).filter(l => !l.away));
+    const maxP = Math.max(6, ...per.flatMap(ls => (ls || []).map(l => l.to)));
+    let h = `<div class="ckw-g ckw-h"><span></span>${days.map((d, i) => `<span class="${d === t ? 'today' : ''}">${WD[i]}</span>`).join('')}</div>`;
+    for (let p = 1; p <= maxP; p++) {
+      h += `<div class="ckw-g"><span class="ckw-n">${p}</span>${days.map((d, i) => {
+        const ls = per[i];
+        if (!ls) return '<span class="ckw-c off"></span>';
+        const l = ls.find(x => x.from <= p && p <= x.to && !x.cancelled) || ls.find(x => x.from <= p && p <= x.to);
+        if (!l) return '<span class="ckw-c"></span>';
+        return `<button type="button" class="ckw-c ${l.cancelled ? 'x' : ''}" ${ccStyle(l.cls)} data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}" title="${esc(clsLabel(l.cls))}${l.cancelled ? ' – entfällt' : ''}">${esc(l.cls.name)} ${esc((l.cls.subject || '').slice(0, 1))}</button>`;
+      }).join('')}</div>`;
+    }
+    return `<section class="section ck-week"><div class="section-head"><h2>Diese Woche</h2><button type="button" class="link" data-action="goto" data-view="woche">Plan ${icon('right')}</button></div><div class="ckw">${h}</div></section>`;
+  }
   function viewStart() {
     const t = todayISO();
     const free = freeReason(t);
@@ -2085,7 +2101,7 @@
     const greet = `${hr < 11 ? 'Guten Morgen' : hr < 17 ? 'Hallo' : 'Guten Abend'}${myName ? ', ' + esc(myName) : ''}!`;
     let html = `<div class="start-head ck-head"><div class="ck-top"><div><p class="ck-greet">${greet}</p><h1>${WD[wdOf(t)]}, ${fmtISO(t)}</h1><p>${sub}</p></div>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}</div>`;
     if (!cs.length) return html + noCourses();
-    html += `<div class="ck-cols"><div class="ck-ga">${cockpitOffen(t)}</div><div class="ck-gb">${heuteTermine(t) + heuteWoche(t)}</div><div class="ck-gc">${heuteBody(t, { ohneTermine: true })}</div></div>`;
+    html += `<div class="ck-cols"><div class="ck-ga">${cockpitOffen(t)}</div><div class="ck-gb">${cockpitWeek(t)}${heuteTermine(t) + heuteWoche(t)}</div><div class="ck-gc">${heuteBody(t, { ohneTermine: true })}</div></div>`;
     return html;
   }
   // Reiter „Eintragen“: alles, was man neu anlegen kann, an einer Stelle
@@ -2658,6 +2674,7 @@
         <div class="seg">
           <button type="button" data-action="setMode" data-mode="liste" class="${S.mode !== 'karte' ? 'on' : ''}">${icon('list')}<span>Liste</span></button>
           <button type="button" data-action="setMode" data-mode="karte" class="${S.mode === 'karte' ? 'on' : ''}">${icon('cards')}<span>Karten</span></button>
+          <button type="button" data-action="setMode" data-mode="raster" class="${S.mode === 'raster' ? 'on' : ''}">${icon('grid')}<span>Raster</span></button>
         </div>
       </div>
       <div class="weeknav">
@@ -2683,7 +2700,7 @@
         <button type="button" class="btn small" data-action="weekGo" data-ws="${prev}">Zur KW ${isoWeek(parseISO(prev))}</button></div>`;
     }
     if (!students.length) return head + emptyState('Keine Kinder in diesem Kurs', '', `<button type="button" class="btn primary" data-action="openCourse" data-cid="${cls.id}" data-tab="schueler">Kinder hinzufügen</button>`, 'users');
-    return head + (S.mode === 'karte' ? cardView(students, byS) : listView(students, byS));
+    return head + (S.mode === 'karte' ? cardView(students, byS) : S.mode === 'raster' ? rasterView(students, byS, cls) : listView(students, byS));
   }
   function courseStrip(cls) { // alle Kurse dieser Woche: was ist noch offen, was ist fertig
     const st = weekCourseStatus(S.weekStart);
@@ -2728,6 +2745,73 @@
         <div class="gbtns">${GRADES.map(n => `<button type="button" class="gbtn g${n} ${cur && cur.kind === 'note' && cur.grade === n ? 'cur' : ''}" data-action="addGrade" data-sid="${s.id}" data-g="${n}" aria-label="Note ${n} für ${esc(s.name)}">${n}</button>`).join('')}<button type="button" class="gbtn more" data-action="more" data-sid="${s.id}" aria-label="Weitere Optionen für ${esc(s.name)}">…</button></div>
       </div>`;
     }).join('')}</div>`;
+  }
+  // Design B: Raster Kinder × Unterrichtstage der Woche, unten ein fester Ziffernblock (1–6 als Block, F und N abgesetzt)
+  function rasterCols(cls) {
+    if (weeklyMode(cls)) return [null];
+    const [from, to] = weekRange();
+    const cols = [...new Set(lessonsBetween(cls.id, from, to).filter(l => !l.cancelled && !l.away).map(l => l.date))].sort();
+    return cols.length ? cols : [currentDay(null, cls.id)];
+  }
+  function rasterSel(cls, list) {
+    const cols = rasterCols(cls), weekly = cols[0] === null;
+    const ok = x => x && list.some(s => s.id === x.sid) && (weekly ? x.date === null : cols.includes(x.date));
+    if (ok(S.rSel)) return S.rSel;
+    const cd = currentDay(null, cls.id), d0 = weekly ? null : cols.includes(cd) ? cd : cols[0];
+    const s0 = list.find(s => !entryOn(cls.id, s.id, d0 || currentDay(s.id, cls.id))) || list[0];
+    S.rSel = s0 ? { sid: s0.id, date: d0 } : null;
+    return S.rSel;
+  }
+  function rasterView(students, byS, cls) {
+    const cols = rasterCols(cls), weekly = cols[0] === null;
+    const list = S.onlyMissing ? students.filter(s => !byS.has(s.id) || (S.rSel && S.rSel.sid === s.id)) : students;
+    if (!list.length) return `<div class="done-msg">${icon('check')} Alle Kinder haben diese Woche einen Eintrag.</div>`;
+    const sel = rasterSel(cls, list);
+    const cd = currentDay(null, cls.id);
+    const dateOf = (sid, d) => d || currentDay(sid, cls.id);
+    const [hf, ht] = rangeFor('hj');
+    const hj = groupBy(liveEntries().filter(e => e.classId === cls.id && e.kind === 'note' && e.date >= hf && e.date <= ht), 'studentId');
+    const cell = (s, d) => {
+      const e = entryOn(cls.id, s.id, dateOf(s.id, d)), on = sel && sel.sid === s.id && sel.date === d;
+      const lab = !e ? '' : e.kind === 'note' ? String(e.grade) : e.kind === 'fehlte' ? 'F' : 'N';
+      const cl = e ? (e.kind === 'note' ? 'g' + e.grade : 'o') : byS.has(s.id) ? '' : 'miss';
+      return `<button type="button" class="rc ${cl} ${on ? 'on' : ''}" data-action="rasterSel" data-sid="${s.id}" data-date="${d || ''}" aria-label="${esc(s.name)}, ${d ? `${WD[wdOf(d)]} ${fmtISO(d)}` : 'diese Woche'}: ${e ? esc(labelEntry(e)) : 'kein Eintrag'}">${lab}</button>`;
+    };
+    const st = `style="--cols:${cols.length}"`;
+    const head = `<div class="rg rg-h" ${st}><span>Kind</span>${cols.map(d => `<span class="${d && d === cd ? 'cur' : ''}">${d ? `${WD[wdOf(d)]} ${parseISO(d).getDate()}.` : `KW ${isoWeek(parseISO(S.weekStart))}`}</span>`).join('')}<span>Ø HJ</span></div>`;
+    const rows = list.map(s => { const g = hj.get(s.id) || [];
+      return `<div class="rg ${byS.has(s.id) ? '' : 'open'} ${sel && sel.sid === s.id ? 'sel' : ''}" ${st} data-kid="${s.id}" id="st-${s.id}"><span class="rn">${esc(s.name)}</span>${cols.map(d => cell(s, d)).join('')}<span class="ra">${g.length ? fmtNum(mean(g.map(e => e.grade)), 1) : '–'}</span></div>`; }).join('');
+    const ss = sel && S.data.students[sel.sid];
+    let pad = '';
+    if (ss) {
+      const i = list.findIndex(x => x.id === ss.id), nx = list[i + 1], date = dateOf(ss.id, sel.date), auto = S.autoNext !== false;
+      pad = `<div class="rpad" ${ccStyle(cls)}>
+        <div class="rpad-top"><span><b>${esc(ss.name)}</b> · ${WD[wdOf(date)]} ${fmtISO(date)}</span>
+          <button type="button" class="rpad-auto ${auto ? 'on' : ''}" data-action="toggleAutoNext" aria-pressed="${auto}">automatisch weiter${auto && nx ? ` (${esc(nx.name.split(' ')[0])})` : ''}<i aria-hidden="true"></i></button></div>
+        <div class="rpad-keys">
+          <div class="rpad-g" role="group" aria-label="Noten">${GRADES.map(n => `<button type="button" class="gbtn g${n}" data-action="rasterKey" data-k="${n}" aria-label="Note ${n} für ${esc(ss.name)}">${n}</button>`).join('')}</div>
+          <div class="rpad-o" role="group" aria-label="Ohne Note"><button type="button" data-action="rasterKey" data-k="F"><b>F</b><small>fehlte</small></button><button type="button" data-action="rasterKey" data-k="N"><b>N</b><small>ohne Note</small></button></div>
+        </div>
+        <div class="rpad-x"><button type="button" class="btn" data-action="rasterUndo" ${S.rLast ? '' : 'disabled'}>Rückgängig</button><button type="button" class="btn" data-action="rasterNote">Notiz …</button><button type="button" class="btn" data-action="notHeld">${weekly ? 'Woche' : 'Tag'} fiel aus</button></div>
+      </div>`;
+    }
+    return `<div class="raster" role="grid" aria-label="Mündliche Noten KW ${isoWeek(parseISO(S.weekStart))}">${head}${rows}</div>${pad}`;
+  }
+  function rasterAdd(k) {
+    const cls = ensureClass(), sel = S.rSel;
+    if (!cls || !sel) return;
+    const st = S.data.students[sel.sid];
+    if (!st) return;
+    const kind = /^[1-6]$/.test(String(k)) ? 'note' : k === 'F' ? 'fehlte' : 'nb';
+    const date = sel.date || currentDay(st.id, cls.id);
+    if (S.autoNext !== false) { // erst weiterschalten, dann speichern (speichern zeichnet neu)
+      const list = entryStudents(cls.id), nx = list[list.findIndex(x => x.id === st.id) + 1];
+      if (nx) S.rSel = { sid: nx.id, date: sel.date };
+    }
+    const e = addEntry({ sid: st.id, cid: cls.id, kind, grade: kind === 'note' ? +k : null, date });
+    S.rLast = e;
+    render();
+    toast(entryToast(e, st.name), { undo: () => { undoEntry(e); S.rLast = null; S.rSel = sel; render(); } });
   }
   function cardList() {
     const cls = ensureClass(); if (!cls) return [];
@@ -5749,6 +5833,10 @@
     more(d) { editEntry(null, d.sid); },
     editEntry(d) { const e = S.data.entries[d.eid]; if (e && !e.deleted) editEntry(e); },
     cardGrade(d) { cardAdd('note', +d.g); },
+    rasterSel(d) { S.rSel = { sid: d.sid, date: d.date || null }; if (d.date) S.day = d.date; render(); },
+    rasterKey(d) { rasterAdd(d.k); },
+    rasterUndo() { const e = S.rLast; if (!e) return; undoEntry(e); S.rLast = null; S.rSel = { sid: e.studentId, date: S.rSel?.date ?? null }; render(); },
+    async rasterNote() { const x = S.rSel; if (!x) return; if (x.date) S.day = x.date; await editEntry(null, x.sid); render(); },
     cardAbsent() { cardAdd('fehlte'); },
     cardNb() { cardAdd('nb'); },
     async cardNote() {
@@ -5906,7 +5994,16 @@
     if (e.key === 'Enter' && e.target.matches('tr[data-action]')) { e.target.click(); return; }
     if (!S.data || $('#modal-root').children.length) return;
     if (e.target.matches('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (S.view === 'kurse' && S.courseTab === 'muendlich' && S.mode === 'karte') {
+    if (S.view === 'kurse' && S.courseTab === 'muendlich' && S.mode === 'raster') {
+      if (/^[1-6]$/.test(e.key)) { e.preventDefault(); rasterAdd(e.key); }
+      else if (e.key === 'f' || e.key === 'F') rasterAdd('F');
+      else if (e.key === 'n' || e.key === 'N') rasterAdd('N');
+      else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && S.rSel) {
+        e.preventDefault();
+        const list = entryStudents(S.classId), i = list.findIndex(x => x.id === S.rSel.sid), nx = list[i + (e.key === 'ArrowDown' ? 1 : -1)];
+        if (nx) { S.rSel = { sid: nx.id, date: S.rSel.date }; render(); }
+      }
+    } else if (S.view === 'kurse' && S.courseTab === 'muendlich' && S.mode === 'karte') {
       if (/^[1-6]$/.test(e.key)) { e.preventDefault(); cardAdd('note', +e.key); }
       else if (e.key === 'f' || e.key === 'F') cardAdd('fehlte');
       else if (e.key === 'n' || e.key === 'N') cardAdd('nb');

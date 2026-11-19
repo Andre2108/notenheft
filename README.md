@@ -1,6 +1,13 @@
-# Notenheft 7.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.2 – Mündlich-Raster und Wochenplan
+
+- **Mündliche Noten als Raster:** Kurs → Mündlich → **Raster** (neben Liste und Karten). Zeilen = Kinder, Spalten = Unterrichtstage der Woche (bei Wochennote eine Spalte „KW“), rechts der Halbjahresschnitt. Wer noch nichts hat, ist orange.
+- **Fester Ziffernblock unten:** Zelle antippen, dann Note 1–6 (als Block) oder F = fehlte, N = ohne Note (abgesetzt). Mit „automatisch weiter“ springt die Auswahl zum nächsten Kind am selben Tag. Darunter Rückgängig, Notiz und „Tag/Woche fiel aus“.
+- **Tastatur am Laptop:** 1–6, F, N tragen ein; ↑/↓ wechseln das Kind.
+- **Cockpit am Laptop:** rechts der Wochenplan Mo–Fr × Stunden; ein Klick auf eine Stunde öffnet sie.
 
 ## Neu in Version 7.1 – Design B (Stufe 2)
 
