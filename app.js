@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.0';
+  const APP_VERSION = '7.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1652,6 +1652,7 @@
         ${Nav.stack.length ? `<button type="button" class="back-btn" data-action="back" aria-label="Zurück" title="Zurück (auch: vom linken Rand wischen)">${icon('left')}</button>` : ''}
         <div class="brand" data-action="goto" data-view="start" role="button" title="Startmenü"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Notenheft</span></div>
         <nav class="tabs-top" aria-label="Bereiche">${tabs}</nav>
+        ${sideCourses()}
         <div class="top-actions">
           <button type="button" id="sync-badge" class="sync-badge" data-action="sync"></button>
           <button type="button" class="icon-btn ${S.view === 'mehr' ? 'on' : ''}" data-action="goto" data-view="mehr" aria-label="Einstellungen" title="Einstellungen">${icon('gear')}</button>
@@ -1662,6 +1663,12 @@
       <nav class="tabs-bottom" aria-label="Bereiche">${tabs}</nav>`;
     renderSyncBadge();
     drawCharts();
+  }
+  function sideCourses() { // nur am Laptop sichtbar: Kurse mit offenen Noten dieser Woche
+    const cs = classesSorted();
+    if (!cs.length) return '';
+    const st = new Map(weekCourseStatus(weekKey(todayISO())).map(x => [x.c.id, x.miss]));
+    return `<div class="side-courses"><small>Kurse</small>${cs.map(c => `<button type="button" class="${S.view === 'kurse' && S.courseId === c.id ? 'on' : ''}" ${ccStyle(c)} data-action="openCourse" data-cid="${c.id}"><i></i><span>${esc(clsLabel(c))}</span>${st.get(c.id) ? `<b>${st.get(c.id)}</b>` : ''}</button>`).join('')}</div>`;
   }
   function softRender() {
     const a = document.activeElement;
@@ -2019,43 +2026,66 @@
 
 
   /* ---------- Startmenü ---------- */
-  function viewStart() {
-    const t = todayISO(), hr = new Date(now()).getHours();
-    const greet = hr < 11 ? 'Guten Morgen' : hr < 17 ? 'Hallo' : 'Guten Abend';
-    const free = freeReason(t);
-    const myName = S.data.prefs?.profil?.name;
-    let html = `<div class="start-head"><h1>${greet}${myName ? ', ' + esc(myName) : ''}!</h1><p>${fmtLong(t)} · KW ${isoWeek(parseISO(t))}${free ? ' · ' + esc(free) : ''}</p></div>`;
-    html += holidayStrip(t);
-    if (classesSorted().length) html += heuteGlance(t) + heuteTermine(t) + heuteWoche(t);
-    const cs = classesSorted();
-    if (!cs.length) return html + noCourses();
-    // Nur Aktionen, die jetzt wirklich möglich bzw. sinnvoll sind
-    const ws = weekKey(t), we = addDaysISO(ws, 6);
-    const withKids = cs.filter(c => studentsOf(c.id).length && !c.noOral);
-    const miss = sum(withKids.map(c => { const has = new Set(entriesOf(c.id, ws, we).map(e => e.studentId)); return studentsOf(c.id).filter(s => !has.has(s.id)).length; }));
+  // Design B: Cockpit – dunkler Kopf mit Tagesstreifen, darunter alles Offene an einer Stelle (je Zeile EIN Knopf)
+  function cockpitStrip(t) {
+    const ls = lessonsOn(t).filter(l => !l.away);
+    const maxP = Math.max(8, ...ls.map(l => l.to));
+    const cells = [], notes = [];
+    for (let p = 1; p <= maxP; p++) {
+      const l = ls.find(x => x.from <= p && p <= x.to && !x.cancelled) || ls.find(x => x.from <= p && p <= x.to);
+      if (!l) { cells.push(`<span class="ck-p"><small>${p}</small><i class="ck-c free"></i></span>`); continue; }
+      const c = l.cls, run = !l.cancelled && lessonRunning(l);
+      cells.push(`<button type="button" class="ck-p" data-action="lessonSheet" data-cid="${c.id}" data-date="${t}" data-from="${l.from}" aria-label="${p}. Stunde: ${esc(clsLabel(c))}${l.cancelled ? ', entfällt' : ''}">
+        <small>${p}</small><i class="ck-c ${l.cancelled ? 'x' : ''} ${run ? 'now' : ''}" ${ccStyle(c)}>${esc(c.name)} ${esc((c.subject || '').slice(0, 1))}</i></button>`);
+    }
+    for (const l of ls) {
+      if (!l.cancelled && lessonRunning(l)) notes.push(`▲ jetzt: ${pLabel(l.from, l.to)}`);
+      else if (l.cancelled) notes.push(`${pLabel(l.from, l.to)} ${esc(l.cancelled === true ? 'entfällt' : l.cancelled)}`);
+    }
+    return `<div class="ck-strip" style="--n:${maxP}">${cells.join('')}</div>${notes.length ? `<div class="ck-notes">${[...new Set(notes)].slice(0, 3).map(n => `<span>${n}</span>`).join('')}</div>` : ''}`;
+  }
+  function cockpitOffen(t) {
+    const rows = [];
+    const row = (tag, tagCls, title, sub, btn, action, data = '') => rows.push(`<div class="ck-row"><span class="ck-tag ${tagCls}">${tag}</span><div class="ck-txt"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</div><button type="button" class="btn small ck-btn" data-action="${action}" ${data}>${btn}</button></div>`);
+    const ws = weekKey(t);
+    const stat = weekCourseStatus(ws);
+    const miss = sum(stat.map(x => x.miss));
+    if (miss) row(String(miss), 'o', `Mündliche Noten KW ${isoWeek(parseISO(ws))}`, stat.map(x => `${esc(clsLabel(x.c))} ${x.miss ? `fehlt ${x.miss}` : '✓'}`).join(' · '), 'Eintragen', 'startNoten');
+    const fehl = missingOverview().filter(r => r.ws < ws);
+    if (fehl.length) row(String(fehl.length), 'o', 'Fehlende mündliche Noten', `${plural(fehl.length, 'Kurswoche', 'Kurswochen')} aus früheren Wochen`, 'Ansehen', 'goto', 'data-view="fehlend"');
+    for (const e of kmMissingResults().slice(0, 3)) row('KA', 'r', `Noten fehlen: ${esc(e.titel)}`, `${esc(e.kurs)} · seit ${esc(e.fertig)} fertig korrigiert`, 'Einfügen', 'kmAsk', `data-eid="${e.id}"`);
+    for (const e of upcomingExams(null, 14)) {
+      const c = S.data.classes[e.classId], inf = examInfo(e);
+      row(esc(c ? c.name : '!'), 'p', `${esc(e.kind || 'Prüfung')} ${WD[wdOf(e.date)]} ${fmtISO(e.date)}`, `${c ? esc(clsLabel(c)) + ' · ' : ''}${inf.lessons != null ? `noch ${plural(inf.lessons, 'Unterrichtsstunde', 'Unterrichtsstunden')}` : relDays(inf.days)}`, 'Öffnen', 'editEvent', `data-eid="${e.id}"`);
+    }
     const tds = todosHeute(t);
-    const tiles = [];
-    const missNow = missingGrades(ws);
-    if (withKids.some(c => weekHasLessons(c.id, ws))) { const m = sum(missNow.map(x => x.miss)); tiles.push(['startNoten', '', 'edit', 'Mündliche Noten eintragen', m ? `diese Woche fehlen noch ${m}` : 'alle haben diese Woche eine Note', 'c-noten']); }
-    if (tds.length) tiles.push(['startTodos', '', 'todo', 'To-dos erledigen', `${tds.length} für heute/morgen`, 'c-todo']);
-    for (const e of kmMissingResults().slice(0, 2)) tiles.push(['kmAsk', e.id, 'exam', `Noten fehlen: ${esc(e.titel)}`, `${esc(e.kurs)} · seit ${esc(e.fertig)} fertig korrigiert`, 'c-termine']);
-    const fehl = missingOverview().filter(r => r.ws < weekKey(t));
-    if (fehl.length) tiles.push(['goto', 'fehlend', 'list', 'Fehlende mündliche Noten', `${plural(fehl.length, 'Kurswoche', 'Kurswochen')} noch offen`, 'c-warn']);
-    if (maAlt().length) tiles.push(['goto', 'mehrarbeit', 'clock', 'Mehrarbeit des letzten Schuljahres', 'Anträge gestellt? Dann kann sie gelöscht werden', 'c-warn']);
-    if (withKids.some(c => c.vocab)) tiles.push(['startVocab', '', 'exam', 'Vokabeltest eintragen', 'Punkte → Note automatisch', 'c-woche']);
+    if (tds.length) row(String(tds.length), 'i', 'To-dos für heute und morgen', tds.slice(0, 3).map(x => esc(x.text || x.title || 'To-do')).join(' · '), 'Ansehen', 'startTodos');
     const tc = termCfg();
     const zEnds = [[tc.hj1End, 'Halbjahreszeugnis'], [tc.end, 'Jahreszeugnis']].filter(([d]) => d && diffDays(t, d) <= 21 && diffDays(t, d) >= -10);
-    if (zEnds.length && withKids.length) { const [d, l] = zEnds[0]; const n = diffDays(t, d); tiles.push(['startZeugnis', '', 'award', 'Zeugnisnoten festlegen', `${l} ${n > 0 ? `in ${n} Tagen` : n === 0 ? 'heute' : 'steht an'}`, 'c-kurse']); }
+    if (zEnds.length && classesSorted().some(c => studentsOf(c.id).length)) { const [d, l] = zEnds[0]; const n = diffDays(t, d); row('Z', 'p', 'Zeugnisnoten festlegen', `${l} ${n > 0 ? `in ${n} Tagen` : n === 0 ? 'heute' : 'steht an'}`, 'Öffnen', 'startZeugnis'); }
     if (inHJ2() && tc.warnDeadline) {
       const n = diffDays(t, tc.warnDeadline), wsum = warnSummary();
-      if (n >= 0 && n <= 30 && wsum.total) tiles.push(['openWarn', '', 'bell', 'Blaue Briefe prüfen', `Frist ${relDays(n)}${wsum.open ? ` · ${wsum.open} offen` : ''}`, 'c-warn']);
+      if (n >= 0 && n <= 30 && wsum.total) row('!', 'r', 'Blaue Briefe prüfen', `Frist ${relDays(n)}${wsum.open ? ` · ${wsum.open} offen` : ''}`, 'Öffnen', 'openWarn');
     }
-    const add = [['newTodo', '', 'todo', 'To-do anlegen'], ['newEvent', 'termin', 'cal', 'Termin eintragen'], ['newEvent', 'ausfall', 'ban', 'Ausfall eintragen'], ['newEvent', 'pruefung', 'flag', 'Prüfung ansetzen']];
-    if (cs.some(c => partnersOf(c).length)) add.push(['newEvent', 'tausch', 'swap', 'Stunden tauschen']);
-    html += `<h2 class="start-q">Was möchtest du tun?</h2>`;
-    if (tiles.length) html += `<div class="start-grid">${tiles.map(([a, v, ic, title, sub, cls]) =>
-      `<button type="button" class="start-tile ${cls}" data-action="${a}" ${v ? (a === 'goto' ? `data-view="${v}"` : `data-eid="${v}"`) : ''}>${icon(ic)}<b>${title}</b><small>${sub}</small></button>`).join('')}</div>`;
-    html += heuteBody(t, { ohneTermine: true });
+    if (maAlt().length) row(String(maAlt().length), 'g', 'Mehrarbeit des letzten Schuljahres', 'Anträge gestellt? Dann kann sie gelöscht werden', 'Ansehen', 'goto', 'data-view="mehrarbeit"');
+    const head = `<div class="section-head"><h2>Offen</h2><span class="muted small">${rows.length ? `${rows.length} · nach Dringlichkeit` : ''}</span></div>`;
+    return `<section class="section ck-offen">${head}${rows.length ? `<div class="ck-list">${rows.join('')}</div>` : `<p class="empty-line">${icon('check')} Nichts offen – alles erledigt.</p>`}</section>`;
+  }
+  function viewStart() {
+    const t = todayISO();
+    const free = freeReason(t);
+    const cs = classesSorted();
+    const ls = lessonsOn(t).filter(l => !l.away);
+    const hours = sum(ls.filter(l => !l.cancelled).map(l => l.hours)), aus = ls.filter(l => l.cancelled).length;
+    const hc = holidayCountdown(t);
+    const right = !hc ? '' : hc.now ? `<div class="ck-hol"><small>Ferien</small><b>${esc(hc.now.name)}</b></div>`
+      : `<div class="ck-hol"><b>${hc.n}</b> <small>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</small></div>`;
+    const sub = [`KW ${isoWeek(parseISO(t))}`, free ? esc(free) : ls.length ? plural(hours, 'Stunde', 'Stunden') : 'kein Unterricht', aus ? plural(aus, 'Ausfall', 'Ausfälle') : ''].filter(Boolean).join(' · ');
+    const hr = new Date(now()).getHours(), myName = S.data.prefs?.profil?.name;
+    const greet = `${hr < 11 ? 'Guten Morgen' : hr < 17 ? 'Hallo' : 'Guten Abend'}${myName ? ', ' + esc(myName) : ''}!`;
+    let html = `<div class="start-head ck-head"><div class="ck-top"><div><p class="ck-greet">${greet}</p><h1>${WD[wdOf(t)]}, ${fmtISO(t)}</h1><p>${sub}</p></div>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}</div>`;
+    if (!cs.length) return html + noCourses();
+    html += `<div class="ck-cols"><div class="ck-ga">${cockpitOffen(t)}</div><div class="ck-gb">${heuteTermine(t) + heuteWoche(t)}</div><div class="ck-gc">${heuteBody(t, { ohneTermine: true })}</div></div>`;
     return html;
   }
   // Reiter „Eintragen“: alles, was man neu anlegen kann, an einer Stelle
@@ -4156,7 +4186,7 @@
     const cs = classesSorted();
     if (S.courseId) {
       const c = S.data.classes[S.courseId];
-      if (c && !c.deleted) return courseRegister(c.id) + viewCourse(c);
+      if (c && !c.deleted) return viewCourse(c);
       S.courseId = null;
     }
     let html = pageHead('Kurse', cs.length ? `${plural(cs.length, 'Kurs', 'Kurse')} · ${sum(cs.map(weeklyHours))} Wochenstunden` : '', `<button type="button" class="btn small" data-action="newClass">${icon('plus')} Kurs</button>`);
@@ -4182,11 +4212,16 @@
   function viewCourse(c) {
     S.classId = c.id;
     let tab = S.courseTab === 'schueler' || S.courseTab === 'stundenplan' ? 'bearbeiten' : CTABS.some(x => x[0] === S.courseTab) ? S.courseTab : 'ueberblick';
-    let html = `<div class="chead" ${ccStyle(c)}>
-        <div><h1><i></i>${esc(c.name)} <span>${esc(c.subject || '')}</span></h1><p>${levelLabel(c)}${c.room ? ` · ${esc(c.room)}` : ''} · ${weeklyHours(c)} Std./Woche · ${plural(studentsOf(c.id).length, 'Kind', 'Kinder')}</p></div>
-        <button type="button" class="icon-btn ${tab === 'bearbeiten' ? 'on' : ''}" data-action="courseTab" data-tab="bearbeiten" aria-label="Kurs bearbeiten" title="Kurs bearbeiten: Kinder, Stunden, Einstellungen">${icon('gear')}</button>
-      </div>
-      <div class="subtabs">${CTABS.filter(x => x[0] !== 'bearbeiten').map(([k, l]) => `<button type="button" data-action="courseTab" data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    let html = `<div class="chead cdark" ${ccStyle(c)}>
+        <div class="ch-top">
+          <button type="button" class="icon-btn ch-back" data-action="openCourse" data-cid="" aria-label="Alle Kurse" title="Alle Kurse">${icon('left')}<span class="sr">Alle Kurse</span></button>
+          <i class="ch-bar" aria-hidden="true"></i>
+          <div class="ch-t"><h1>${esc(c.name)} <span>${esc(c.subject || '')}</span></h1><p>${levelLabel(c)} · ${plural(studentsOf(c.id).length, 'Kind', 'Kinder')}${c.room ? ` · ${esc(c.room)}` : ''} · ${weeklyHours(c)} Std./Woche</p></div>
+          <button type="button" class="icon-btn ${tab === 'bearbeiten' ? 'on' : ''}" data-action="courseTab" data-tab="bearbeiten" aria-label="Kurs bearbeiten" title="Kurs bearbeiten: Kinder, Stunden, Einstellungen">${icon('gear')}</button>
+        </div>
+        ${courseKpis(c)}
+        <div class="subtabs">${CTABS.filter(x => x[0] !== 'bearbeiten').map(([k, l]) => `<button type="button" data-action="courseTab" data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      </div>`;
     if (tab === 'muendlich') html += viewErfassen();
     else if (tab === 'tests') html += viewLeistungen();
     else if (tab === 'uebersicht') html += viewUebersicht();
@@ -4194,6 +4229,17 @@
     else if (tab === 'bearbeiten') html += `<h2 class="sub-h">${icon('users')} Kinder</h2>` + courseStudents(c) + `<h2 class="sub-h">${icon('clock')} Stunden im Stundenplan</h2>` + courseSlots(c) + `<h2 class="sub-h">${icon('gear')} Einstellungen</h2>` + courseEdit(c);
     else html += courseOverview(c);
     return html;
+  }
+  function courseKpis(c) { // die 1–3 wichtigsten Zahlen des Kurses für den Kopf
+    const [hf, ht] = rangeFor('hj');
+    const avgs = overviewRows(c, hf, ht).map(r => r.st.avg).filter(x => x != null);
+    const k = [];
+    if (!c.noOral && avgs.length) k.push(`<div class="ch-k"><b>${fmtNum(mean(avgs), 1)}</b><span>Ø mündlich</span></div>`);
+    const ws = weekKey(todayISO()), st = weekCourseStatus(ws).find(x => x.c.id === c.id);
+    if (st) k.push(`<button type="button" class="ch-k" data-action="courseTab" data-tab="muendlich"><b class="${st.miss ? 'o' : ''}">${st.miss || icon('check')}</b><span>${st.miss ? 'fehlen' : 'fertig'} KW ${isoWeek(parseISO(ws))}</span></button>`);
+    const ex = upcomingExams(c.id, 365)[0];
+    if (ex) { const inf = examInfo(ex); k.push(`<button type="button" class="ch-k" data-action="editEvent" data-eid="${ex.id}"><b>${inf.lessons ?? inf.days}</b><span>${inf.lessons != null ? 'Std.' : 'Tage'} bis ${esc(shortKind(ex.kind))}</span></button>`); }
+    return k.length ? `<div class="ch-kpis">${k.join('')}</div>` : '';
   }
   function courseOverview(c) {
     const st = courseStats(c.id);

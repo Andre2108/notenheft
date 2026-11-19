@@ -1,6 +1,14 @@
-# Notenheft 7.0 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.1 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.1 – Design B (Stufe 2)
+
+- **Cockpit statt Startseite:** dunkler Kopf mit Datum, Stundenzahl, Ausfällen und Schultagen bis zu den Ferien. Darunter ein **Tagesstreifen** mit den Stunden 1–8 (antippen öffnet die Stunde, Ausfälle durchgestrichen, die laufende Stunde umrandet).
+- **„Offen“:** alles, was zu tun ist, an einer Stelle und nach Dringlichkeit – fehlende mündliche Noten, Klausurnoten aus der Korrektur-App, Prüfungen der nächsten 14 Tage (mit Unterrichtsstunden bis dahin), To-dos, Zeugnisse, Blaue Briefe, alte Mehrarbeit. Jede Zeile hat genau einen Knopf.
+- **Kurskopf:** dunkles Band mit Kursfarbe, Zurück zu allen Kursen, Kennzahlen (Ø mündlich, fehlende Noten dieser Woche, Stunden bis zur nächsten Prüfung) und den Reitern des Kurses.
+- **Mündliche Noten:** dichtere Liste, Noten 1–6 als Block, „…“ abgesetzt; in der Kartenansicht die Noten als eine Reihe.
+- **Laptop:** dunkle Seitenleiste mit „Eintragen“, den Bereichen und allen Kursen (mit Zahl der fehlenden Noten). Im Cockpit stehen „Offen“ und die Termine nebeneinander.
 
 ## Neu in Version 7.0 – Design B (Stufe 1)
 
