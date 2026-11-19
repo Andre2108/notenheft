@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.2';
+  const APP_VERSION = '7.2.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2054,10 +2054,6 @@
     const fehl = missingOverview().filter(r => r.ws < ws);
     if (fehl.length) row(String(fehl.length), 'o', 'Fehlende mündliche Noten', `${plural(fehl.length, 'Kurswoche', 'Kurswochen')} aus früheren Wochen`, 'Ansehen', 'goto', 'data-view="fehlend"');
     for (const e of kmMissingResults().slice(0, 3)) row('KA', 'r', `Noten fehlen: ${esc(e.titel)}`, `${esc(e.kurs)} · seit ${esc(e.fertig)} fertig korrigiert`, 'Einfügen', 'kmAsk', `data-eid="${e.id}"`);
-    for (const e of upcomingExams(null, 14)) {
-      const c = S.data.classes[e.classId], inf = examInfo(e);
-      row(esc(c ? c.name : '!'), 'p', `${esc(e.kind || 'Prüfung')} ${WD[wdOf(e.date)]} ${fmtISO(e.date)}`, `${c ? esc(clsLabel(c)) + ' · ' : ''}${inf.lessons != null ? `noch ${plural(inf.lessons, 'Unterrichtsstunde', 'Unterrichtsstunden')}` : relDays(inf.days)}`, 'Öffnen', 'editEvent', `data-eid="${e.id}"`);
-    }
     const tds = todosHeute(t);
     if (tds.length) row(String(tds.length), 'i', 'To-dos für heute und morgen', tds.slice(0, 3).map(x => esc(x.text || x.title || 'To-do')).join(' · '), 'Ansehen', 'startTodos');
     const tc = termCfg();
@@ -2070,6 +2066,17 @@
     if (maAlt().length) row(String(maAlt().length), 'g', 'Mehrarbeit des letzten Schuljahres', 'Anträge gestellt? Dann kann sie gelöscht werden', 'Ansehen', 'goto', 'data-view="mehrarbeit"');
     const head = `<div class="section-head"><h2>Offen</h2><span class="muted small">${rows.length ? `${rows.length} · nach Dringlichkeit` : ''}</span></div>`;
     return `<section class="section ck-offen">${head}${rows.length ? `<div class="ck-list">${rows.join('')}</div>` : `<p class="empty-line">${icon('check')} Nichts offen – alles erledigt.</p>`}</section>`;
+  }
+  // Anstehende Prüfungen der nächsten 7 Tage – eigener Block, weil sie keine offene Aufgabe sind
+  function cockpitDemnaechst() {
+    const xs = upcomingExams(null, 7);
+    if (!xs.length) return '';
+    const rows = xs.map(e => {
+      const c = S.data.classes[e.classId], inf = examInfo(e);
+      const sub = `${c ? esc(clsLabel(c)) + ' · ' : ''}${relDays(inf.days)}${inf.lessons != null ? ` · noch ${plural(inf.lessons, 'Unterrichtsstunde', 'Unterrichtsstunden')}` : ''}`;
+      return `<div class="ck-row"><span class="ck-tag p">${esc(c ? c.name : '!')}</span><div class="ck-txt"><b>${esc(e.kind || 'Prüfung')} ${WD[wdOf(e.date)]} ${fmtISO(e.date)}</b><small>${sub}</small></div><button type="button" class="btn small ck-btn" data-action="editEvent" data-eid="${e.id}">Öffnen</button></div>`;
+    });
+    return `<section class="section ck-demn"><div class="section-head"><h2>Demnächst</h2><span class="muted small">Prüfungen der nächsten 7 Tage</span></div><div class="ck-list">${rows.join('')}</div></section>`;
   }
   function cockpitWeek(t) { // nur am Laptop sichtbar: Mo–Fr × Stunden, Zelle öffnet die Stunde
     const ws = weekKey(t), days = [0, 1, 2, 3, 4].map(i => addDaysISO(ws, i));
@@ -2101,7 +2108,7 @@
     const greet = `${hr < 11 ? 'Guten Morgen' : hr < 17 ? 'Hallo' : 'Guten Abend'}${myName ? ', ' + esc(myName) : ''}!`;
     let html = `<div class="start-head ck-head"><div class="ck-top"><div><p class="ck-greet">${greet}</p><h1>${WD[wdOf(t)]}, ${fmtISO(t)}</h1><p>${sub}</p></div>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}</div>`;
     if (!cs.length) return html + noCourses();
-    html += `<div class="ck-cols"><div class="ck-ga">${cockpitOffen(t)}</div><div class="ck-gb">${cockpitWeek(t)}${heuteTermine(t) + heuteWoche(t)}</div><div class="ck-gc">${heuteBody(t, { ohneTermine: true })}</div></div>`;
+    html += `<div class="ck-cols"><div class="ck-ga">${cockpitOffen(t)}${cockpitDemnaechst()}</div><div class="ck-gb">${cockpitWeek(t)}${heuteTermine(t) + heuteWoche(t)}</div><div class="ck-gc">${heuteBody(t, { ohneTermine: true })}</div></div>`;
     return html;
   }
   // Reiter „Eintragen“: alles, was man neu anlegen kann, an einer Stelle
