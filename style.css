@@ -1461,3 +1461,116 @@ html, body { touch-action: manipulation; }
 .pts-grid.gram .pbtn.g6 { background: color-mix(in srgb, var(--c6) 16%, var(--card)); }
 .pts-grid.gram .pbtn.cur { box-shadow: inset 0 0 0 3px var(--cc); }
 @media (max-width: 420px) { .pts-grid.gram { grid-template-columns: repeat(5, 1fr); } }
+
+/* =====================================================================
+   Design B (ab 7.0): Schiefergrau, Türkis als Akzent, dunkler Kopf,
+   dichte helle Listen. Orange = offen, Rot = Prüfung/dringend.
+   ===================================================================== */
+:root {
+  --bg: #eef1f4; --card: #ffffff; --card-2: #f8fafc; --text: #0f172a; --muted: #475569;
+  --line: #dbe1e8; --seg-bg: #dbe1e8;
+  --accent: #0f766e; --accent-contrast: #ffffff; --accent-soft: #ccfbf1;
+  --ok: #15803d; --warn: #c2410c; --danger: #b91c1c; --flash: rgba(15, 118, 110, .14);
+  --c1: #15803d; --c2: #4d7c0f; --c3: #a16207; --c4: #c2410c; --c5: #b91c1c; --c6: #7f1d1d;
+  --radius: 12px; --radius-s: 8px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .05);
+  --shadow-l: 0 12px 32px rgba(15, 23, 42, .18);
+  --head: #0f172a; --head-2: #1e293b; --head-line: #334155; --head-text: #f8fafc; --head-muted: #cbd5e1;
+  --tabh: 62px;
+}
+body { font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+/* Kopfzeile dunkel */
+.topbar { background: var(--head); color: var(--head-text); border-bottom: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.topbar .icon-btn { background: var(--head-2); border-color: var(--head-line); color: var(--head-text); border-radius: 8px; }
+.topbar .icon-btn.on { background: var(--accent); border-color: var(--accent); }
+.topbar .back-btn { color: var(--head-text); }
+.brand img { border-radius: 7px; }
+.sync-badge { background: var(--head-2); border-color: var(--head-line); color: var(--head-muted); }
+.sync-badge.ok { color: #5eead4; }
+.sync-badge.pending { color: #fdba74; }
+.sync-badge.err { color: #fecaca; border-color: #b91c1c; }
+
+/* Seitenkopf: dunkles Band direkt unter der Kopfzeile (Kontext + wichtigste Zahlen) */
+.main > .page-head:first-child, .main > .start-head:first-child {
+  background: var(--head); color: var(--head-text);
+  margin: -8px -16px 14px; padding: 4px 18px 16px; border-radius: 0 0 14px 14px;
+}
+.main > .page-head:first-child p, .main > .start-head:first-child p { color: var(--head-muted); }
+.main > .page-head:first-child .btn:not(.primary) { background: var(--head-2); border-color: var(--head-line); color: var(--head-text); }
+.start-head h1, .page-head h1 { font-weight: 700; letter-spacing: -.015em; }
+
+/* Reiter unten: Cockpit · Plan · (+) · Kurse · Mehr */
+.tabs-bottom { grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.tabs-bottom button.on { color: var(--accent); font-weight: 700; }
+.tabs-bottom .tab-plus { color: var(--text); font-weight: 600; }
+.tabs-bottom .tab-plus .i {
+  width: 54px; height: 54px; padding: 14px; margin-top: -24px; border-radius: 50%;
+  background: var(--accent); color: #fff; box-shadow: 0 4px 14px rgba(15, 118, 110, .35);
+}
+.tabs-bottom .tab-plus.on .i { background: var(--head); }
+@media (min-width: 860px) {
+  .tabs-top button { color: var(--head-muted); }
+  .tabs-top button.on { background: var(--head-2); color: var(--head-text); box-shadow: none; }
+  .tabs-top .tab-plus { background: var(--accent); color: #fff; font-weight: 600; margin: 0 6px; }
+  .tabs-top .tab-plus.on { background: var(--accent); color: #fff; box-shadow: 0 0 0 2px var(--head-text); }
+  .main > .page-head:first-child, .main > .start-head:first-child { margin-top: 8px; border-radius: 14px; }
+}
+
+/* Flächen: ruhiger, dichter */
+.panel { border-radius: 12px; box-shadow: var(--shadow); }
+.card { border-radius: 16px; }
+.seg { border-radius: 9px; }
+.seg button { border-radius: 7px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); }
+.start-tile { border-radius: 12px; }
+
+/* Tastenfelder nach Note gruppiert */
+.ggroups { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; }
+.ggroups.two { display: grid; grid-template-columns: 1fr 1fr; }
+.ggroup {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px; align-items: center;
+  padding: 4px; border-radius: 10px; background: color-mix(in srgb, var(--gc) 15%, #fff);
+}
+.ggroups.two .ggroup { grid-template-columns: 32px minmax(0, 1fr); gap: 4px; }
+.ggl { display: flex; flex-direction: column; align-items: center; font-size: 21px; font-weight: 800; line-height: 1; color: color-mix(in srgb, var(--gc) 80%, #000); }
+.ggl small { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.ggb { display: grid; grid-template-columns: repeat(var(--gcols, 4), minmax(0, 1fr)); gap: 4px; }
+.ggroups .pbtn {
+  flex-direction: row; height: 44px; border-radius: 8px; font-size: 17px; font-weight: 700;
+  background: #fff; color: color-mix(in srgb, var(--gc) 80%, #000);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gc) 40%, #fff);
+  font-variant-numeric: tabular-nums;
+}
+.ggroups .pbtn small { font-size: 15px; margin-left: 1px; }
+.ggroups .pbtn.on, .ggroups .pbtn.cur { background: var(--accent); color: #fff; box-shadow: none; }
+.ggroups .pbtn.sug { box-shadow: inset 0 0 0 2px var(--text); }
+.ggroups .pbtn.sug.on { box-shadow: inset 0 0 0 2px #fff; }
+.ggroups .pbtn:active { transform: scale(.94); background: var(--accent); color: #fff; }
+@media (hover: hover) { .ggroups .pbtn:hover { background: color-mix(in srgb, var(--gc) 10%, #fff); } .ggroups .pbtn.on:hover, .ggroups .pbtn.cur:hover { background: var(--accent); } }
+
+/* Design B: Kacheln hell mit kleiner farbiger Kennung statt bunter Flächen */
+:root { --pc-term: #0369a1; --pc-swap: #a16207; --ser-m: #0f766e; --ser-v: #0369a1; }
+.sync-badge { white-space: nowrap; }
+.start-tile {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 10px; row-gap: 1px;
+  align-items: center; align-content: center; min-height: 66px; padding: 10px 12px; border-radius: 10px;
+  background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: none;
+  --tbg: #ccfbf1; --tfg: #115e59;
+}
+.start-tile .i { grid-row: 1 / span 2; width: 36px; height: 36px; padding: 8px; margin: 0; border-radius: 8px; background: var(--tbg); color: var(--tfg); }
+.start-tile b { font-size: 15px; font-weight: 700; margin: 0; line-height: 1.25; }
+.start-tile small { font-size: 12px; color: var(--muted); opacity: 1; }
+.start-tile.c-noten, .start-tile.c-warn { --tbg: #ffedd5; --tfg: #9a3412; }
+.start-tile.c-termine { --tbg: #fee2e2; --tfg: #991b1b; }
+.start-tile.c-todo { --tbg: #e0e7ff; --tfg: #3730a3; }
+.start-tile.c-heute, .start-tile.c-woche, .start-tile.c-neu { --tbg: #ccfbf1; --tfg: #115e59; }
+.start-tile.c-kurse { --tbg: #f3e8ff; --tfg: #6b21a8; }
+.start-tile.c-jahr { --tbg: #fef3c7; --tfg: #92400e; }
+.start-tile.c-mehr { --tbg: #e2e8f0; --tfg: #334155; }
+@media (hover: hover) { .start-tile:hover { border-color: #94a3b8; } }
+.sumbar.bold .sum-item { background: var(--head); border-radius: 10px; }
+.sumbar.bold .sum-item.less { background: var(--head-2); }
+.sumbar.bold .sum-item.term { background: #0369a1; }
+.start-now { border-radius: 12px; background: color-mix(in srgb, var(--cc, #0f766e) 70%, #0f172a); }
+.start-tile.start-tile { background: var(--card); color: var(--text); }

@@ -1,6 +1,14 @@
-# Notenheft 6.6.8 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.0 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.0 – Design B (Stufe 1)
+
+- **Neues Aussehen:** ruhiges Schiefergrau mit Türkis, dunkle Kopfzeile, helle, dichte Listen. Orange = offen, Rot = Prüfung/dringend.
+- **Neues App-Icon** „Nh“ mit Stift. Auf dem iPhone die App einmal vom Home-Bildschirm löschen und neu hinzufügen, damit das Icon erscheint (die Daten bleiben über die Sync-Datei erhalten).
+- **Vier Reiter + Plus-Knopf:** Cockpit · Plan · Kurse · Mehr, in der Mitte der runde Knopf „Eintragen“. Mehrarbeit liegt jetzt unter **Plan** (Woche · Termine · Jahr · Mehrarbeit).
+- **Tasten nach Note gruppiert:** Grammatik- und Vokabeltest, Klassenarbeits-, Zeugnis- und SoMi-Quartalsnoten zeigen je Note einen farbigen Kasten mit allen Werten, die zu ihr führen. Beim Vokabeltest gibt es die halben Punkte direkt („+0,5“ entfällt); „−“ = Note mit Minus.
+- **Startseite:** helle Kacheln mit kleiner farbiger Kennung statt bunter Flächen.
 
 ## Neu in Version 6.6.8 – Grammatiktests, Kindersuche, Sortierung
 

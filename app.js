@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '6.6.8';
+  const APP_VERSION = '7.0';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1569,9 +1569,9 @@
   /* =====================================================================
      Grundgerüst
      ===================================================================== */
-  const TABS = [['start', 'Heute', 'home'], ['planer', 'Planer', 'week'], ['neu', 'Eintragen', 'plus'], ['kurse', 'Kurse', 'book'], ['mehrarbeit', 'Mehrarbeit', 'clock'], ['mehr', 'Mehr', 'more']];
-  const TAB_OF = { neu: 'neu', start: 'start', heute: 'start', todos: 'start', fehlend: 'kurse', woche: 'planer', termine: 'planer', jahr: 'planer', mehrarbeit: 'mehrarbeit', kurse: 'kurse', mehr: 'mehr' };
-  const PLANER = [['woche', 'Woche'], ['termine', 'Termine'], ['jahr', 'Jahr']];
+  const TABS = [['start', 'Cockpit', 'home'], ['planer', 'Plan', 'week'], ['neu', 'Eintragen', 'plus'], ['kurse', 'Kurse', 'book'], ['mehr', 'Mehr', 'more']];
+  const TAB_OF = { neu: 'neu', start: 'start', heute: 'start', todos: 'start', fehlend: 'kurse', woche: 'planer', termine: 'planer', jahr: 'planer', mehrarbeit: 'planer', kurse: 'kurse', mehr: 'mehr' };
+  const PLANER = [['woche', 'Woche'], ['termine', 'Termine'], ['jahr', 'Jahr'], ['mehrarbeit', 'Mehrarbeit']];
   const planerSeg = () => `<div class="seg full planer-seg">${PLANER.map(([k, l]) => `<button type="button" data-action="goto" data-view="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -1647,7 +1647,7 @@
     const tabNow = TAB_OF[S.view] || 'start';
     if (tabNow === 'planer') S.planLast = S.view;
     const v = tabNow === 'planer' ? () => planerSeg() + v0() : v0;
-    const tabs = TABS.map(([k, l, i]) => { const view = k === 'planer' ? (S.planLast || 'woche') : k; return `<button type="button" data-action="goto" data-view="${view}" class="${tabNow === k ? 'on' : ''}" ${tabNow === k ? 'aria-current="page"' : ''}>${icon(i)}<span>${l}</span></button>`; }).join('');
+    const tabs = TABS.map(([k, l, i]) => { const view = k === 'planer' ? (S.planLast || 'woche') : k; return `<button type="button" data-action="goto" data-view="${view}" class="${k === 'neu' ? 'tab-plus ' : ''}${tabNow === k ? 'on' : ''}" ${tabNow === k ? 'aria-current="page"' : ''}>${icon(i)}<span>${l}</span></button>`; }).join('');
     app.innerHTML = `<header class="topbar">
         ${Nav.stack.length ? `<button type="button" class="back-btn" data-action="back" aria-label="Zurück" title="Zurück (auch: vom linken Rand wischen)">${icon('left')}</button>` : ''}
         <div class="brand" data-action="goto" data-view="start" role="button" title="Startmenü"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Notenheft</span></div>
@@ -1701,6 +1701,14 @@
     : '';
   const pageHead = (title, sub = '', right = '') => `<div class="page-head"><div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${right}</div>`;
   const ccStyle = c => `style="--cc:${esc(clsColor(c))}"`;
+  // Design B: Tasten nach Note gruppiert – je Note ein farbiger Kasten mit allen Werten, die zu ihr führen
+  const gOf = v => Math.min(6, Math.max(1, Math.round(v + 1e-9)));
+  function gradeGroups(items, { cols = 4, two = false, id = '', label = 'Noten' } = {}) {
+    const by = {};
+    for (const it of items) (by[it.g] = by[it.g] || []).push(it.html);
+    return `<div class="ggroups${two ? ' two' : ''}" ${id ? `id="${id}"` : ''} role="group" aria-label="${esc(label)}" style="--gcols:${cols}">${[1, 2, 3, 4, 5, 6].filter(g => by[g]).map(g =>
+      `<div class="ggroup g${g}"><span class="ggl" aria-hidden="true"><small>Note</small>${g}</span><div class="ggb">${by[g].join('')}</div></div>`).join('')}</div>`;
+  }
 
   /* ---------- Anmelden / Einrichten ---------- */
   function viewWelcome() {
@@ -3079,16 +3087,22 @@
       </div>
       <div class="card-name">${esc(s.name)}</div>
       <div class="card-info">${r ? (r.value == null ? '<span class="res-chip none">fehlte</span>' : `<span class="res-chip ${valCls(r.value)}">${testPts(a, r)} → Note ${esc(r.label)}</span>`) : '<span class="muted">noch nicht eingetragen</span>'}</div>
-      ${isGram(a) ? gramPad(r) : `<div class="pts-grid">${[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(p => `<button type="button" class="pbtn" data-action="vocabPts" data-p="${p}" ${S.vHalf && p === 10 ? 'disabled' : ''}>${p}${S.vHalf && p < 10 ? '<small>,5</small>' : ''}<em>${vocabLabel(p + (S.vHalf && p < 10 ? 0.5 : 0))}</em></button>`).join('')}
-        <button type="button" class="pbtn half ${S.vHalf ? 'on' : ''}" data-action="vocabHalf">+0,5</button></div>
+      ${isGram(a) ? gramPad(r) : `${vocabPad(r)}
       <div class="card-extra two"><button type="button" class="btn" data-action="vocabAbsent">fehlte</button><button type="button" class="btn" data-action="vocabClear" ${r ? '' : 'disabled'}>Eintrag löschen</button></div>
-      <p class="hint">Halbe Punkte: erst „+0,5“ antippen, dann die ganze Zahl. Die Note steht klein unter jeder Zahl.</p>`}
+      <p class="hint">Je Note ein Kasten mit allen Punktzahlen, die zu ihr führen. „−“ = Note mit Minus.</p>`}
     </div>`;
+  }
+  function vocabPad(r) { // 0–10 Punkte in halben Schritten, nach Note gruppiert
+    const cur = r && r.value != null ? r.points : null;
+    const pts = p => fmtNum(p, 1).replace(',0', '');
+    return gradeGroups(Array.from({ length: 21 }, (_, i) => (20 - i) / 2).map(p => { const l = vocabLabel(p); return { g: parseInt(l, 10),
+      html: `<button type="button" class="pbtn vp ${cur === p ? 'cur' : ''}" data-action="vocabPts" data-p="${p}" aria-label="${pts(p)} Punkte, Note ${l}">${pts(p)}${l.endsWith('-') ? '<small>−</small>' : ''}</button>` }; }),
+      { cols: 4, label: 'Punkte, nach Note gruppiert' });
   }
   function gramPad(r) { // Zahl der richtigen Lücken antippen – darunter steht die Note
     const cur = r && r.value != null ? r.points : null;
     return `<p class="gram-q">Wie viele Lücken richtig?</p>
-      <div class="pts-grid gram">${Array.from({ length: GRAM_MAX + 1 }, (_, i) => GRAM_MAX - i).map(n => `<button type="button" class="pbtn gp g${gramLabel(n)} ${cur === n ? 'cur' : ''}" data-action="gramPts" data-p="${n}" aria-label="${n} richtig, Note ${gramLabel(n)}">${n}<em>Note ${gramLabel(n)}</em></button>`).join('')}</div>
+      ${gradeGroups(Array.from({ length: GRAM_MAX + 1 }, (_, i) => GRAM_MAX - i).map(n => ({ g: +gramLabel(n), html: `<button type="button" class="pbtn gp ${cur === n ? 'cur' : ''}" data-action="gramPts" data-p="${n}" aria-label="${n} richtig, Note ${gramLabel(n)}">${n}</button>` })), { cols: 6, label: 'Richtige Lücken, nach Note gruppiert' })}
       <div class="card-extra two"><button type="button" class="btn" data-action="vocabAbsent">fehlte</button><button type="button" class="btn" data-action="vocabClear" ${r ? '' : 'disabled'}>Eintrag löschen</button></div>
       <p class="hint">${GRAM_STEPS.map(([m], i) => `${i ? GRAM_STEPS[i - 1][0] - 1 : GRAM_MAX}–${m} = ${GRAM_STEPS[i][1]}`).join(' · ')} (richtige Lücken = Note). Rechtschreibfehler zählen als Fehler.</p>`;
   }
@@ -3114,7 +3128,7 @@
     const res = await openModal({
       title: s.name,
       body: `<p class="muted small">${esc(a.title)} · ${fmtShort(a.date)}</p>
-        <div class="grade-grid">${GRID.map(([l, v]) => `<button type="button" class="gbtn g${Math.min(6, Math.round(v + 1e-9) || 1)} ${r && r.label === l ? 'on' : ''}" data-l="${l}">${l}</button>`).join('')}</div>`,
+        ${gradeGroups(GRID.map(([l, v]) => ({ g: gOf(v), html: `<button type="button" class="pbtn ${r && r.label === l ? 'on' : ''}" data-l="${l}">${l}</button>` })), { cols: 3 })}`,
       mount: (root, close) => root.querySelectorAll('[data-l]').forEach(b => b.addEventListener('click', () => close(b.dataset.l))),
       actions: [...(r ? [{ label: 'Entfernen', cls: 'danger', value: '__del' }] : []), { label: 'nicht mitgeschrieben', value: '__nt' }, { label: 'Abbrechen', value: null }]
     });
@@ -3934,7 +3948,7 @@
           ${line('Gesamt (50 / 50)', r.total, null)}
           <div class="calc-row big"><span>Vorschlag</span><strong>${gradeText(c, r.suggest)}</strong></div>
         </div>
-        <div class="field"><span>Zeugnisnote${sii ? ' (Punkte)' : ''}</span><div class="grade-grid ${sii ? 'pts' : ''}" id="m-g">${opts.map(o => `<button type="button" class="gbtn g${Math.min(6, Math.max(1, Math.round(o[1] + 1e-9)))} ${sel(val) && sel(val)[0] === o[0] ? 'on' : ''} ${sel(r.suggest) && sel(r.suggest)[0] === o[0] ? 'sug' : ''}" data-v="${o[1]}" data-k="${o[0]}">${o[2]}</button>`).join('')}</div>
+        <div class="field"><span>Zeugnisnote${sii ? ' (Punkte)' : ''}</span>${gradeGroups(opts.map(o => ({ g: gOf(o[1]), html: `<button type="button" class="pbtn ${sel(val) && sel(val)[0] === o[0] ? 'on' : ''} ${sel(r.suggest) && sel(r.suggest)[0] === o[0] ? 'sug' : ''}" data-v="${o[1]}" data-k="${o[0]}">${o[2]}</button>` })), { cols: 3, two: sii, id: 'm-g', label: 'Zeugnisnote' })}
           <small class="muted">Umrandet: Vorschlag der App</small></div>
         <label class="field"><span>Begründung (bei Korrektur)</span><input id="m-reason" maxlength="160" value="${esc(r.override?.reason || '')}" placeholder="z. B. deutliche Steigerung im 2. Quartal"></label>
         <button type="button" class="link" data-close="detail">${icon('chart')} Entwicklung &amp; Details ansehen</button>`,
@@ -3996,7 +4010,7 @@
           ${c.vocab ? line('Vokabeltests Ø', r.vAvg, plural(r.vCount, 'Test', 'Tests')) : ''}
           <div class="calc-row big"><span>Vorschlag</span><strong>${gradeText(c, sug)}</strong></div>
         </div>
-        <div class="field"><span>Quartalsnote SoMi (Punkte)</span><div class="grade-grid pts" id="m-g">${opts.map(p => `<button type="button" class="gbtn g${Math.min(6, Math.max(1, Math.round(pointsToValue(p) + 1e-9)))} ${on(val, p) ? 'on' : ''} ${on(sug, p) ? 'sug' : ''}" data-p="${p}">${p}</button>`).join('')}</div>
+        <div class="field"><span>Quartalsnote SoMi (Punkte)</span>${gradeGroups(opts.map(p => ({ g: gOf(pointsToValue(p)), html: `<button type="button" class="pbtn ${on(val, p) ? 'on' : ''} ${on(sug, p) ? 'sug' : ''}" data-p="${p}">${p}</button>` })), { cols: 3, two: true, id: 'm-g', label: 'Punkte' })}
           <small class="muted">Umrandet: Vorschlag der App</small></div>
         <label class="field"><span>Bemerkung (optional)</span><input id="m-reason" maxlength="160" value="${esc(cur?.reason || '')}" placeholder="z. B. Referat eingerechnet"></label>`,
       mount: root => {
@@ -5577,7 +5591,7 @@
     enableVocab() { updateClass(S.classId, { vocab: true }); toast('Vokabeltests eingeschaltet'); },
     vMode(d) { S.vMode = d.m; render(); },
     vocabGo(d) { S.vMode = 'karte'; S.vIdx = Math.max(0, +d.i || 0); S.vHalf = false; render(); },
-    vocabPts(d) { vocabSave(+d.p + (S.vHalf && +d.p < 10 ? 0.5 : 0)); },
+    vocabPts(d) { S.vHalf = false; vocabSave(+d.p); },
     gramPts(d) { vocabSave(+d.p); },
     vocabHalf() { S.vHalf = !S.vHalf; render(); },
     vocabAbsent() {
