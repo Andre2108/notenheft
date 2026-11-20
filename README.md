@@ -1,6 +1,10 @@
-# Notenheft 7.3 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.3.1 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.3.1 – Vertretungen im Cockpit
+
+- **Stundenstreifen und Wochenplan im Cockpit zeigen jetzt auch Vertretungen aus WebUntis** (gelb, gestrichelt) und wöchentliche Untis-Stunden ohne eigenen Kurs (grau). Antippen öffnet die Details bzw. die Mehrarbeit. Unter dem Streifen steht „5. Std. Vertretung M · 7a“; die Stundenzahl im Kopf zählt Vertretungen mit.
 
 ## Neu in Version 7.3 – Aufgeräumtes Cockpit
 
