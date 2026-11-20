@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.3';
+  const APP_VERSION = '7.3.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2027,17 +2027,25 @@
 
   /* ---------- Startmenü ---------- */
   // Design B: Cockpit – dunkler Kopf mit Tagesstreifen, darunter alles Offene an einer Stelle (je Zeile EIN Knopf)
+  const fremdKurz = x => x.klassen?.length && !x.regel ? `${klassenTxt(x.klassen)} ${(x.fach || '').slice(0, 1)}` : (x.fach || 'Vertr.').slice(0, 6);
   function cockpitStrip(t) {
-    const ls = lessonsOn(t).filter(l => !l.away);
-    const maxP = Math.max(8, ...ls.map(l => l.to));
+    const ls = lessonsOn(t).filter(l => !l.away), fr = untisFremd(t);
+    const maxP = Math.max(8, ...ls.map(l => l.to), ...fr.map(x => x.to));
     const cells = [], notes = [];
     for (let p = 1; p <= maxP; p++) {
       const l = ls.find(x => x.from <= p && p <= x.to && !x.cancelled) || ls.find(x => x.from <= p && p <= x.to);
+      const v = (!l || l.cancelled) && fr.find(x => x.from <= p && p <= x.to);
+      if (v) { // Vertretung bzw. Untis-Stunde ohne eigenen Kurs – Antippen öffnet Details/Mehrarbeit
+        cells.push(`<button type="button" class="ck-p" data-action="maOpen" data-uid="${esc(v.id)}" data-date="${t}" aria-label="${p}. Stunde: ${v.regel ? '' : 'Vertretung '}${esc(v.titel)}">
+        <small>${p}</small><i class="ck-c fr ${v.regel ? 'regel' : ''} ${lessonRunning(v) ? 'now' : ''}">${esc(fremdKurz(v))}</i></button>`);
+        continue;
+      }
       if (!l) { cells.push(`<span class="ck-p"><small>${p}</small><i class="ck-c free"></i></span>`); continue; }
       const c = l.cls, run = !l.cancelled && lessonRunning(l);
       cells.push(`<button type="button" class="ck-p" data-action="lessonSheet" data-cid="${c.id}" data-date="${t}" data-from="${l.from}" aria-label="${p}. Stunde: ${esc(clsLabel(c))}${l.cancelled ? ', entfällt' : ''}">
         <small>${p}</small><i class="ck-c ${l.cancelled ? 'x' : ''} ${run ? 'now' : ''}" ${ccStyle(c)}>${esc(c.name)} ${esc((c.subject || '').slice(0, 1))}</i></button>`);
     }
+    for (const x of fr) if (!x.regel) notes.push(`${pLabel(x.from, x.to)} Vertretung ${esc(x.titel)}`);
     for (const l of ls) {
       if (!l.cancelled && lessonRunning(l)) notes.push(`▲ jetzt: ${pLabel(l.from, l.to)}`);
       else if (l.cancelled) notes.push(`${pLabel(l.from, l.to)} ${esc(l.cancelled === true ? 'entfällt' : l.cancelled)}`);
@@ -2116,13 +2124,16 @@
   function cockpitWeek(t) { // nur am Laptop sichtbar: Mo–Fr × Stunden, Zelle öffnet die Stunde
     const ws = weekKey(t), days = [0, 1, 2, 3, 4].map(i => addDaysISO(ws, i));
     const per = days.map(d => freeReason(d) ? null : lessonsOn(d).filter(l => !l.away));
-    const maxP = Math.max(6, ...per.flatMap(ls => (ls || []).map(l => l.to)));
+    const frs = days.map(d => untisFremd(d));
+    const maxP = Math.max(6, ...per.flatMap(ls => (ls || []).map(l => l.to)), ...frs.flat().map(x => x.to));
     let h = `<div class="ckw-g ckw-h"><span></span>${days.map((d, i) => `<span class="${d === t ? 'today' : ''}">${WD[i]}</span>`).join('')}</div>`;
     for (let p = 1; p <= maxP; p++) {
       h += `<div class="ckw-g"><span class="ckw-n">${p}</span>${days.map((d, i) => {
         const ls = per[i];
         if (!ls) return '<span class="ckw-c off"></span>';
         const l = ls.find(x => x.from <= p && p <= x.to && !x.cancelled) || ls.find(x => x.from <= p && p <= x.to);
+        const v = (!l || l.cancelled) && frs[i].find(x => x.from <= p && p <= x.to);
+        if (v) return `<button type="button" class="ckw-c fr ${v.regel ? 'regel' : ''}" data-action="maOpen" data-uid="${esc(v.id)}" data-date="${d}" title="${v.regel ? '' : 'Vertretung: '}${esc(v.titel)}">${esc(fremdKurz(v))}</button>`;
         if (!l) return '<span class="ckw-c"></span>';
         return `<button type="button" class="ckw-c ${l.cancelled ? 'x' : ''}" ${ccStyle(l.cls)} data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}" title="${esc(clsLabel(l.cls))}${l.cancelled ? ' – entfällt' : ''}">${esc(l.cls.name)} ${esc((l.cls.subject || '').slice(0, 1))}</button>`;
       }).join('')}</div>`;
@@ -2134,7 +2145,7 @@
     const free = freeReason(t);
     const cs = classesSorted();
     const ls = lessonsOn(t).filter(l => !l.away);
-    const hours = sum(ls.filter(l => !l.cancelled).map(l => l.hours)), aus = ls.filter(l => l.cancelled).length;
+    const hours = sum(ls.filter(l => !l.cancelled).map(l => l.hours)) + sum(untisFremd(t).map(x => x.hours)), aus = ls.filter(l => l.cancelled).length;
     const hc = holidayCountdown(t);
     const right = !hc ? '' : hc.now ? `<div class="ck-hol"><small>Ferien</small><b>${esc(hc.now.name)}</b></div>`
       : `<div class="ck-hol"><b>${hc.n}</b> <small>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</small></div>`;
