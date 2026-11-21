@@ -1,6 +1,21 @@
-# Notenheft 7.4.2 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.5 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.5 – Sicherung, Kurse aufgeräumt
+
+- **Sicherung:** Kurse → Reiter **Sicherung**: Excel-Datei (Übersicht + je Kurs ein Blatt mit Ø mündlich und Tendenz, SoMi, schriftlich, Vorschlag und Zeugnis je Halbjahr, allen Arbeiten/Tests und den mündlichen Noten je Woche) und die verschlüsselte Sicherung. Sind für alle Kurse Zeugnisnoten da, erscheint ein To-do „Alle Noten sichern“. Der PC legt montags und donnerstags die verschlüsselte Sicherung und eine Excel-Datei aller Noten mit Namen in den OneDrive (Notenheft-Sicherung → Schuljahr → Halbjahr → „KW 48 (23.11.–29.11.2026)“). Dafür legt das Notenheft die Noten nur mit Kürzeln und verschlüsselt für den PC ab; die Namen setzt erst der PC aus der Kürzel-Tabelle ein.
+- **Kacheln führen zum Inhalt** (Mehrarbeit: „Antrag möglich“ → „Für den Antrag“; Woche: Stunden, Prüfungen, To-dos, Ausfälle).
+- **Cockpit** mit Begrüßung (Name unter Mehr → „Dein Name für die Begrüßung“).
+- **Eintragen:** Bereiche als Karten mit Symbol; „Mündliche Noten – Wochennote oder Einzelnoten je Kind“.
+- **Kurse:** Union Jack bei Englisch, Deutschlandfahne bei Deutsch. Überblick zeigt bei „Prüfungen“, wie viele bis zum Halbjahresende noch offen, terminiert und nicht terminiert sind (ohne den Balken bis zu den Ferien).
+- **Mündlich im Kurs** nur noch für diesen Kurs; der Hinweis „Standard für …“ steht nur noch, wenn eine Woche abweicht.
+- **Löschen mit zweifacher Bestätigung:** Arbeiten, Tests (Papierkorb in der Liste) und Kurse.
+- **Tests** heißen nur noch „Tests“; Noten-Tabelle ohne Spalten „Noten“ und „fehlte“; Blaue Briefe erst ab Klasse 6.
+- **Kinder sortieren per Drag & Drop** (Kurs → Zahnrad → Kinder, Griff ☰); gilt für „Sortieren: Liste“.
+- **Drucken** (Elternsprechtag, Zeugniskonferenz) öffnet eine Vorschau mit „Drucken“ und „Teilen / PDF“ – auch in der iPhone-App.
+- **Suche am iPhone:** Das Suchfeld rückt unter den festen Kopf, die Treffer bleiben über der Tastatur sichtbar.
+- **Mehr:** Klausurmanager ganz oben, die doppelte Terminliste ist weg.
 
 ## Neu in Version 7.4.2 – Ausfälle deutlicher entscheiden
 

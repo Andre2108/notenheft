@@ -1775,3 +1775,33 @@ body:has(.rpad) #toast { bottom: calc(var(--tabh) + env(safe-area-inset-bottom) 
 .ma-row.aus.off:not(.offen) .ma-main { opacity: .75; }
 .ma-row.aus .ma-main { flex-wrap: wrap; row-gap: 6px; }
 .ma-row.aus .aus-wahl { flex-basis: 100%; margin-top: 0; }
+/* 7.5 */
+.section[id], .seg[id] { scroll-margin-top: calc(var(--toph, 0px) + var(--headh, 0px) + 10px); }
+.ck-greet { margin: 0 0 2px; font-size: 15px; font-weight: 600; color: var(--head-muted); }
+.neu-sec { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 12px 14px; margin: 0 0 14px; box-shadow: var(--shadow); }
+.neu-sec h2 { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 750; letter-spacing: 0; text-transform: none; color: var(--text); margin: 0 2px 12px; }
+.neu-ic { display: inline-flex; width: 34px; height: 34px; border-radius: 10px; align-items: center; justify-content: center; background: var(--sec, var(--accent)); color: #fff; }
+.neu-ic .i { width: 19px; height: 19px; }
+.neu-sec.n-noten { --sec: #0f766e; }
+.neu-sec.n-plan { --sec: #2563eb; }
+.neu-sec.n-orga { --sec: #7c3aed; }
+.neu-sec .start-tile.c-neu { --tbg: color-mix(in srgb, var(--sec) 12%, var(--card)); --tfg: var(--sec); }
+.flag { width: 20px; height: 13px; margin-left: 6px; vertical-align: -1px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.as-wrap { display: flex; align-items: center; gap: 2px; }
+.as-wrap .as-row { flex: 1; min-width: 0; }
+.as-del { flex: none; color: var(--muted); }
+.drag-h { flex: none !important; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; color: var(--muted); font-size: 18px; padding: 6px 10px 6px 2px; }
+.stud-list li.dragging { position: relative; z-index: 5; background: var(--card); box-shadow: var(--shadow); border-radius: 8px; }
+body.print-preview #print-root { display: block; position: fixed; inset: 0; z-index: 70; overflow: auto; background: #fff; color: #111; padding: calc(env(safe-area-inset-top) + 16px) 16px 96px; }
+body.print-preview #print-root .print-doc { max-width: 800px; margin: 0 auto; font-size: 14px; }
+body.print-preview #print-root .print-doc header { display: flex; gap: 10px; align-items: center; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 10px; }
+body.print-preview #print-root .print-doc h1 { font-size: 20px; margin: 0; }
+body.print-preview #print-root .print-doc h2 { font-size: 16px; margin: 14px 0 6px; }
+body.print-preview #print-root .pt { width: 100%; border-collapse: collapse; font-size: 13px; }
+body.print-preview #print-root .pt th, body.print-preview #print-root .pt td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
+.print-bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px); background: #fff; border-top: 1px solid #ddd; }
+@media print { .print-bar { display: none !important; } }
+/* Suche: Kennzahlen im Kopf ausblenden, damit mehr Treffer über die Tastatur passen; Platz unten, damit das Suchfeld nach oben kann */
+body.ksearching .ch-kpis, body.ksearching .ck-strip, body.ksearching .sumbar.bold { display: none; }
+body.ksearching .main { padding-bottom: 70vh; }
+.kurse-seg { margin: 0 0 12px; }

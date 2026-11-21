@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.4.2';
+  const APP_VERSION = '7.5';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -1168,6 +1168,7 @@
         try { weeklyGradeTodo(); } catch (e) { console.warn('Noten-To-do:', e); }
         try { maAntragTodo(); } catch (e) { console.warn('Mehrarbeit-To-do:', e); }
         try { examTodos(); } catch (e) { console.warn('Prüfungs-To-do:', e); }
+        try { zeugnisSicherungTodo(); } catch (e) { console.warn('Sicherungs-To-do:', e); }
         pushStatusWrite().catch(e => console.warn('Push-Status:', e));
         ewhCatalogRefresh().then(() => softRender()).catch(e => console.warn('Katalog:', e));
         pcExport().catch(e => console.warn('PC-Termine:', e));
@@ -2175,7 +2176,9 @@
     const right = !hc ? '' : hc.now ? `<div class="ck-hol"><small>Ferien</small><b>${esc(hc.now.name)}</b></div>`
       : `<div class="ck-hol"><b>${hc.n}</b> <small>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</small></div>`;
     const sub = [`KW ${isoWeek(parseISO(t))}`, free ? esc(free) : ls.length ? plural(hours, 'Stunde', 'Stunden') : 'kein Unterricht', aus ? plural(aus, 'Ausfall', 'Ausfälle') : ''].filter(Boolean).join(' · ');
-    let html = `<div class="start-head ck-head"><div class="ck-top"><h1>${WD[wdOf(t)]}, ${fmtISO(t)} <small>${sub}</small></h1>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}${cockpitHeuteChips(t)}</div>`;
+    const hh = new Date().getHours(), nm = S.data.prefs?.profil?.name;
+    const greet = `${hh < 11 ? 'Guten Morgen' : hh < 17 ? 'Hallo' : 'Guten Abend'}${nm ? ', ' + esc(nm) : ''}!`;
+    let html = `<div class="start-head ck-head"><p class="ck-greet">${greet}</p><div class="ck-top"><h1>${WD[wdOf(t)]}, ${fmtISO(t)} <small>${sub}</small></h1>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}${cockpitHeuteChips(t)}</div>`;
     if (!cs.length) return html + noCourses();
     const ga = cockpitOffen(t) + cockpitDemnaechst(t);
     html += `<div class="ck-cols"><div class="ck-ga">${ga || `<p class="empty-line">${icon('check')} Nichts zu erledigen, in den nächsten 7 Tagen steht nichts an.</p>`}</div><div class="ck-gb">${cockpitWeek(t)}</div></div>`;
@@ -2187,13 +2190,13 @@
     const noten = [], plan = [['newEvent', 'pruefung', 'flag', 'Prüfung ansetzen', 'Klassenarbeit, Klausur, Test'], ['newEvent', 'termin', 'cal', 'Termin', 'auch mit ausfallenden Stunden'],
       ['newEvent', 'ausfall', 'ban', 'Ausfall', 'Stunde oder ganzer Tag']];
     if (cs.some(c => partnersOf(c).length)) plan.push(['newEvent', 'tausch', 'swap', 'Stunden tauschen', 'gleiche Klasse, anderes Fach']);
-    if (cs.some(c => studentsOf(c.id).length)) noten.push(['startNoten', '', 'edit', 'Mündliche Noten', 'Wochennote je Kind']);
+    if (cs.some(c => studentsOf(c.id).length)) noten.push(['startNoten', '', 'edit', 'Mündliche Noten', 'Wochennote oder Einzelnoten je Kind']);
     if (cs.some(c => c.vocab)) noten.push(['startVocab', '', 'exam', 'Vokabeltest', 'Punkte → Note'], ['startGram', '', 'exam', 'Test – irregular verbs', 'Lücken → Note']);
     if (kmKey()) noten.push(['kmPaste', '', 'copy', 'Klausurnoten einfügen', 'aus der Korrektur-App']);
     const orga = [['newTodo', '', 'todo', 'To-do', 'mit Datum, Uhrzeit, Erinnerung'], ['maNew', '', 'clock', 'Vertretung nachtragen', 'für die Mehrarbeit']];
     const tile = ([a, type, ic, title, sub]) => `<button type="button" class="start-tile c-neu" data-action="${a}" ${type ? `data-type="${type}"` : ''}>${icon(ic)}<b>${title}</b><small>${sub}</small></button>`;
-    const grp = (h, items) => items.length ? `<section class="neu-sec"><h2>${h}</h2><div class="start-grid neu-grid">${items.map(tile).join('')}</div></section>` : '';
-    return pageHead('Eintragen', 'Was möchtest du neu eintragen?') + grp('Noten', noten) + grp('Termine &amp; Unterricht', plan) + grp('Organisation', orga);
+    const grp = (h, ic, cls, items) => items.length ? `<section class="neu-sec ${cls}"><h2><span class="neu-ic">${icon(ic)}</span>${h}</h2><div class="start-grid neu-grid">${items.map(tile).join('')}</div></section>` : '';
+    return pageHead('Eintragen', 'Was möchtest du neu eintragen?') + grp('Noten', 'edit', 'n-noten', noten) + grp('Termine &amp; Unterricht', 'cal', 'n-plan', plan) + grp('Organisation', 'todo', 'n-orga', orga);
   }
   // Schultage (Mo–Fr ohne Feiertage/Ferien) ab heute bis vor die nächsten Ferien
   function holidayCountdown(t) {
@@ -2534,16 +2537,16 @@
     const ausH = sum(lsAll.filter(l => l.cancelled).map(l => l.hours)), nEx = wEvents.filter(e => e.type === 'pruefung').length;
     const nTodo = openTodos().filter(x => { const due = todoDue(x); return due && due <= addDaysISO(ws, 6) && (due >= ws || isThisWeek); }).length;
     html += glance([
-      { value: String(sum(lsAll.filter(l => !l.cancelled).map(l => l.hours))), label: 'Stunden', tone: 'less' },
-      { value: String(nEx), label: nEx === 1 ? 'Prüfung' : 'Prüfungen', tone: nEx ? 'exam' : 'exam zero' },
-      { value: String(nTodo), label: 'To-dos', tone: nTodo ? 'tdo' : 'tdo zero', action: 'goto', data: 'data-view="todos"' },
-      { value: String(ausH), label: 'fallen aus', tone: ausH ? 'aus' : 'aus zero' }
+      { value: String(sum(lsAll.filter(l => !l.cancelled).map(l => l.hours))), label: 'Stunden', tone: 'less', action: 'scrollTo', data: 'data-target="w-plan"' },
+      { value: String(nEx), label: nEx === 1 ? 'Prüfung' : 'Prüfungen', tone: nEx ? 'exam' : 'exam zero', action: 'scrollTo', data: 'data-target="w-pruef"' },
+      { value: String(nTodo), label: 'To-dos', tone: nTodo ? 'tdo' : 'tdo zero', action: 'scrollTo', data: 'data-target="w-todos"' },
+      { value: String(ausH), label: 'fallen aus', tone: ausH ? 'aus' : 'aus zero', action: 'scrollTo', data: 'data-target="w-termine"' }
     ], true);
-    html += `<div class="seg week-seg"><button type="button" data-action="weekMode" data-m="grid" class="${S.weekMode !== 'list' ? 'on' : ''}">${icon('week')}<span>Stundenplan</span></button><button type="button" data-action="weekMode" data-m="list" class="${S.weekMode === 'list' ? 'on' : ''}">${icon('list')}<span>Tagesliste</span></button></div>`;
+    html += `<div class="seg week-seg" id="w-plan"><button type="button" data-action="weekMode" data-m="grid" class="${S.weekMode !== 'list' ? 'on' : ''}">${icon('week')}<span>Stundenplan</span></button><button type="button" data-action="weekMode" data-m="list" class="${S.weekMode === 'list' ? 'on' : ''}">${icon('list')}<span>Tagesliste</span></button></div>`;
     html += S.weekMode === 'list' ? weekAgenda(ws) : planGrid(ws);
     // Countdown bis zur nächsten Prüfung je Kurs
     const rows = cs.map(c => ({ c, e: nextExamOf(c.id, addDaysISO(t, -1)) })).filter(x => x.e);
-    html += `<section class="section"><div class="section-head"><h2>${picto('pruefung', 'sm')} Stunden bis zur Prüfung</h2></div>
+    html += `<section class="section" id="w-pruef"><div class="section-head"><h2>${picto('pruefung', 'sm')} Stunden bis zur Prüfung</h2></div>
       ${rows.length ? `<div class="count-list">${rows.map(({ c, e }) => { const inf = examInfo(e); return `<button type="button" class="count-row" ${ccStyle(c)} data-action="editEvent" data-eid="${e.id}">
         <span class="cr-name"><b>${esc(c.name)}</b> ${esc(c.subject || '')}</span>
         <span class="cr-what">${esc(e.kind || 'Prüfung')} · ${fmtShort(e.date)}</span>
@@ -2551,9 +2554,9 @@
         <span class="cr-days">${relDays(inf.days)}</span></button>`; }).join('')}</div>
         <p class="foot-note">Ab jetzt bis vor den Prüfungstag, ohne Ausfälle, Ferien und Feiertage.</p>` : '<p class="empty-line">Keine Prüfungen eingetragen.</p>'}</section>`;
     const wTodos = openTodos().filter(x => { const due = todoDue(x); return due && due <= addDaysISO(ws, 6) && (due >= ws || isThisWeek); }).sort(todoSort);
-    html += `<section class="section"><div class="section-head"><h2>${picto('todo', 'sm')} To-dos</h2><span class="head-links"><button type="button" class="link" data-action="newTodo" data-date="${ws <= t && t <= we ? t : ws}">${icon('plus')} To-do</button><button type="button" class="link" data-action="goto" data-view="todos">Alle ${icon('right')}</button></span></div>
+    html += `<section class="section" id="w-todos"><div class="section-head"><h2>${picto('todo', 'sm')} To-dos</h2><span class="head-links"><button type="button" class="link" data-action="newTodo" data-date="${ws <= t && t <= we ? t : ws}">${icon('plus')} To-do</button><button type="button" class="link" data-action="goto" data-view="todos">Alle ${icon('right')}</button></span></div>
       ${todoList(wTodos, {}, 'Diese Woche ist nichts zu erledigen.')}</section>`;
-    html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Termine &amp; Ausfälle</h2><button type="button" class="link" data-action="newEvent" data-date="${ws <= t && t <= we ? t : ws}">${icon('plus')} Neu</button></div>
+    html += `<section class="section" id="w-termine"><div class="section-head"><h2>${picto('termin', 'sm')} Termine &amp; Ausfälle</h2><button type="button" class="link" data-action="newEvent" data-date="${ws <= t && t <= we ? t : ws}">${icon('plus')} Neu</button></div>
       ${wEvents.length ? `<div class="ev-list">${wEvents.map(e => eventRow(e, { showCountdown: true })).join('')}</div>` : '<p class="empty-line">In dieser Woche ist nichts eingetragen.</p>'}</section>`;
     const withKids = cs.filter(c => studentsOf(c.id).length);
     if (withKids.length) {
@@ -2764,9 +2767,8 @@
         ${isThisWeek ? '' : '<button type="button" class="btn small" data-action="weekToday">Heute</button>'}
         <button type="button" class="icon-btn" data-action="weekNext" aria-label="Nächste Woche">${icon('right')}</button>
       </div>
-      ${courseStrip(cls)}
       <div class="mode-row"><div class="seg" role="group" aria-label="Mündliche Noten in KW ${isoWeek(ws)}">${[['woche', 'Wochennote'], ['stunde', 'Einzelstunden']].map(([k, l]) => `<button type="button" data-action="gradeModeWeek" data-m="${k}" class="${(k === 'woche') === weeklyMode(cls) ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <small class="muted">${cls.modeWeeks?.[S.weekStart] && weeklyMode(cls) !== weeklyDefault(cls) ? `nur KW ${isoWeek(ws)} · <button type="button" class="link" data-action="gradeModeDefault">als Standard</button>` : `Standard für ${esc(cls.name)}`}</small></div>
+        ${cls.modeWeeks?.[S.weekStart] && weeklyMode(cls) !== weeklyDefault(cls) ? `<small class="muted">nur KW ${isoWeek(ws)} · <button type="button" class="link" data-action="gradeModeDefault">als Standard für ${esc(cls.name)}</button></small>` : ''}</div>
       ${weeklyMode(cls) ? `<p class="muted small week-mode-info">Eine Note pro Kind für KW ${isoWeek(ws)} – erneutes Antippen ersetzt sie.</p>` : `<div class="days" role="group" aria-label="Datum für neue Einträge">
         ${[0, 1, 2, 3, 4].map(i => { const d = addDays(ws, i); const iso = toISO(d); return `<button type="button" data-action="setDay" data-day="${iso}" class="${iso === day ? 'on' : ''} ${lessonDays.has(iso) ? 'has-lesson' : ''}" ${ccStyle(cls)} title="${lessonDays.has(iso) ? 'Unterricht an diesem Tag' : ''}">${WD[i]} <small>${d.getDate()}.</small></button>`; }).join('')}
       </div>`}
@@ -3022,16 +3024,14 @@
     const avgs = rows.map(r => r.st.avg).filter(x => x != null);
     const total = sum(rows.map(r => r.st.count));
     return `<div class="table-wrap"><table class="ov">
-      <thead><tr>${th('name', 'Name')}${th('avg', 'mündl. Ø', 'num')}<th class="num" title="SoMi = mündlich + Vokabeltests">SoMi</th><th class="num" title="Klassenarbeiten/Klausuren inkl. mündlicher Prüfung, gewichtet">schriftl.</th>${th('count', 'Noten', 'num')}<th class="num" title="letzte 4 Wochen gegenüber davor">Tendenz</th>${th('absent', 'fehlte', 'num')}</tr></thead>
+      <thead><tr>${th('name', 'Name')}${th('avg', 'mündl. Ø', 'num')}<th class="num" title="SoMi = mündlich + Vokabeltests">SoMi</th><th class="num" title="Klassenarbeiten/Klausuren inkl. mündlicher Prüfung, gewichtet">schriftl.</th><th class="num" title="letzte 4 Wochen gegenüber davor">Tendenz</th></tr></thead>
       <tbody>${rows.map(({ s, st }) => `<tr data-action="studentDetail" data-sid="${s.id}" tabindex="0">
         <td>${esc(s.name)}</td>
         <td class="num"><span class="avg ${avgCls(st.avg)}">${fmtNum(st.avg)}</span></td>
         <td class="num">${rows.find(x => x.s === s)?.cr?.somi != null ? fmtNum(rows.find(x => x.s === s).cr.somi) : '–'}</td>
         <td class="num">${rows.find(x => x.s === s)?.cr?.schr != null ? fmtNum(rows.find(x => x.s === s).cr.schr) : '–'}</td>
-        <td class="num">${st.count}</td>
-        <td class="num">${trendHtml(st.trend)}</td>
-        <td class="num">${st.absent || ''}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td>Kursschnitt</td><td class="num">${fmtNum(avgs.length ? mean(avgs) : null)}</td><td class="num">${(() => { const v = rows.map(r => r.cr?.somi).filter(x => x != null); return fmtNum(v.length ? mean(v) : null); })()}</td><td class="num">${(() => { const v = rows.map(r => r.cr?.schr).filter(x => x != null); return fmtNum(v.length ? mean(v) : null); })()}</td><td class="num">${total}</td><td></td><td></td></tr></tfoot>
+        <td class="num">${trendHtml(st.trend)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Kursschnitt</td><td class="num">${fmtNum(avgs.length ? mean(avgs) : null)}</td><td class="num">${(() => { const v = rows.map(r => r.cr?.somi).filter(x => x != null); return fmtNum(v.length ? mean(v) : null); })()}</td><td class="num">${(() => { const v = rows.map(r => r.cr?.schr).filter(x => x != null); return fmtNum(v.length ? mean(v) : null); })()}</td><td></td></tr></tfoot>
     </table></div>`;
   }
   function matrixCells(ents) {
@@ -3206,16 +3206,17 @@
     if (S.assessId) { const a = S.data.assessments[S.assessId]; if (a && !a.deleted && a.classId === c.id) return viewAssessment(a); S.assessId = null; }
     const students = studentsOf(c.id);
     const linked = new Set(live(S.data.assessments).map(a => a.eventId).filter(Boolean));
-    const exams = live(S.data.events).filter(e => e.type === 'pruefung' && e.classId === c.id && !linked.has(e.id) && e.date <= addDaysISO(todayISO(), 21))
+    const exams = live(S.data.events).filter(e => e.type === 'pruefung' && e.classId === c.id && !linked.has(e.id) && e.date <= todayISO())
       .sort((a, b) => a.date.localeCompare(b.date));
     const schr = assessmentsOf(c.id, 'schriftlich'), vok = assessmentsOf(c.id, 'vokabel');
     const row = a => {
       const rs = students.map(s => resultOf(a.id, s.id)).filter(Boolean);
       const vals = rs.map(r => r.value).filter(v => v != null);
       const avg = mean(vals);
-      return `<button type="button" class="as-row" data-action="openAssess" data-aid="${a.id}" ${ccStyle(c)}>
+      return `<div class="as-wrap"><button type="button" class="as-row" data-action="openAssess" data-aid="${a.id}" ${ccStyle(c)}>
         <div class="as-main"><strong>${esc(a.title)}</strong><span>${fmtShort(a.date)}${a.art === 'muendlich' ? ' · Mündliche Prüfung' : ''}${weightOf(a) !== 1 ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''} · ${rs.length}/${students.length} eingetragen</span></div>
-        <span class="res-chip ${valCls(avg)}">Ø ${avg != null ? fmtNum(avg, 2) : '–'}</span>${icon('right')}</button>`;
+        <span class="res-chip ${valCls(avg)}">Ø ${avg != null ? fmtNum(avg, 2) : '–'}</span>${icon('right')}</button>
+        <button type="button" class="icon-btn plain as-del" data-action="deleteAssess" data-aid="${a.id}" aria-label="${esc(a.title)} löschen" title="Löschen">${icon('trash')}</button></div>`;
     };
     return `<div class="toolbar">${classSelect()}</div>${kmPendingPanel(c)}
       <section class="section"><div class="section-head"><h2>Schriftliche Leistungen</h2><span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="schriftlich">${icon('plus')} Arbeit</button><button type="button" class="link" data-action="newAssess" data-type="schriftlich" data-art="muendlich">${icon('plus')} Mündliche Prüfung</button></span></div>
@@ -3225,7 +3226,7 @@
         ${kmKey() ? `<button type="button" class="btn import-btn" data-action="kmPaste">${icon('copy')} Ergebnis aus der Korrektur-App einfügen</button>` : ''}
         <label class="btn file-btn import-btn">${icon('upload')} Noten aus dem Korrektur-Tool importieren<input type="file" accept=".xlsx" data-change="importKA"></label>
       </section>
-      <section class="section"><div class="section-head"><h2>Vokabeltests &amp; Tests – irregular verbs</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Test – irregular verbs</button></span>` : ''}</div>
+      <section class="section"><div class="section-head"><h2>Tests</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Test – irregular verbs</button></span>` : ''}</div>
         ${c.vocab ? (vok.length ? `<div class="as-list">${vok.map(row).join('')}</div>${vocabMatrix(c, vok, students)}`
           : '<p class="muted small pad">Noch keine Tests. Vokabeltest: max. 10 Punkte, halbe Punkte möglich. Test – irregular verbs: Zahl der richtigen Lücken (von 30) antippen. Die Note wird jeweils automatisch berechnet.</p>')
           : `<div class="panel slim"><p class="muted small">Vokabeltests und Tests – irregular verbs sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
@@ -3346,6 +3347,19 @@
     afterKidEntry(true); // Kind bleibt mit Ergebnis stehen, das Suchfeld ist bereit für den nächsten Namen
     toast(`${s.name}: ${isGram(a) ? `${points}/${GRAM_MAX} richtig` : `${fmtNum(points, 1).replace(',0', '')} P.`} → Note ${label}`);
   }
+  async function deleteAssessment(a) { // zweimal bestätigen
+    const n = live(S.data.results).filter(r => r.assessmentId === a.id && r.value != null).length;
+    if (!await confirmDialog(`„${esc(a.title)}“ löschen?`, `Die Arbeit bzw. der Test wird mit ${plural(n, 'eingetragenen Note', 'eingetragenen Noten')} gelöscht.`, 'Weiter', true)) return false;
+    if (!await confirmDialog('Wirklich endgültig löschen?', `<strong>${esc(a.title)}</strong> (${fmtISO(a.date, true)}) und alle Noten dazu sind danach weg. Das lässt sich nicht rückgängig machen.`, 'Endgültig löschen', true)) return false;
+    S.assessId = null;
+    commit(d => {
+      for (const r of Object.values(d.results)) if (!r.deleted && r.assessmentId === a.id) d.results[r.id] = { id: r.id, deleted: true, updatedAt: now() };
+      if (a.km) for (const o of Object.values(d.obs)) if (!o.deleted && o.km === a.km) d.obs[o.id] = { id: o.id, deleted: true, updatedAt: now() };
+      d.assessments[a.id] = { id: a.id, deleted: true, updatedAt: now() };
+    });
+    toast('Gelöscht');
+    return true;
+  }
   async function editAssessment(a, preset = {}) {
     const isNew = !a;
     const type = a?.type || preset.type || 'schriftlich';
@@ -3365,16 +3379,7 @@
         { label: isNew ? 'Anlegen' : 'Speichern', cls: 'primary', run: root => { const t = root.querySelector('#m-t').value.trim(), d = root.querySelector('#m-d').value; if (!t) { shake(root.querySelector('#m-t')); return false; } if (!d) { shake(root.querySelector('#m-d')); return false; } const out = { title: t, date: d }; if (root.querySelector('#m-art')) { out.art = root.querySelector('#m-art').value; out.weight = +root.querySelector('#m-w').value; } return out; } }]
     });
     if (!res) return null;
-    if (res === 'delete') {
-      if (!await confirmDialog('Löschen', `„${esc(a.title)}“ mit allen eingetragenen Noten löschen?`, 'Löschen', true)) return null;
-      S.assessId = null;
-      commit(d => {
-        for (const r of Object.values(d.results)) if (!r.deleted && r.assessmentId === a.id) d.results[r.id] = { id: r.id, deleted: true, updatedAt: now() };
-        if (a.km) for (const o of Object.values(d.obs)) if (!o.deleted && o.km === a.km) d.obs[o.id] = { id: o.id, deleted: true, updatedAt: now() };
-        d.assessments[a.id] = { id: a.id, deleted: true, updatedAt: now() };
-      });
-      return null;
-    }
+    if (res === 'delete') { await deleteAssessment(a); return null; }
     const id = a?.id || uid();
     commit(d => { d.assessments[id] = Object.assign({}, a || Object.assign({ id, classId: c.id, type, eventId: preset.eventId || null }, gram ? { scale: 'gram30' } : {}), res, { updatedAt: now() }); });
     return id;
@@ -4021,10 +4026,17 @@
     const ferien = live(S.data.holidays).map(h => ({ name: h.name, von: h.from, bis: h.to })).sort((a, b) => a.von.localeCompare(b.von));
     const plan = planExport();
     const key = JSON.stringify({ termine, ferien, plan });
-    if (S.device.pcLast === key) return;
-    const blob = await kmEncryptFor(S.device.pcPub, { format: 'nh-termine', v: 2, stand: now(), termine, ferien, plan });
-    await GH.putText(g, 'ausgang/termine.json', JSON.stringify(blob), 'Notenheft: Termine für den PC');
-    S.device.pcLast = key; persistLocal();
+    if (S.device.pcLast !== key) {
+      const blob = await kmEncryptFor(S.device.pcPub, { format: 'nh-termine', v: 2, stand: now(), termine, ferien, plan });
+      await GH.putText(g, 'ausgang/termine.json', JSON.stringify(blob), 'Notenheft: Termine für den PC');
+      S.device.pcLast = key; persistLocal();
+    }
+    // Noten für die wöchentliche Backup-Mail (Excel am PC): nur Kürzel, keine Namen
+    const sheets = notenExportSheets(true), nkey = JSON.stringify(sheets);
+    if (S.device.pcNotenLast === nkey) return;
+    const nb = await kmEncryptFor(S.device.pcPub, { format: 'nh-noten', v: 1, stand: now(), sheets });
+    await GH.putText(g, 'ausgang/noten.json', JSON.stringify(nb), 'Notenheft: Noten für die Sicherung (nur Kürzel)');
+    S.device.pcNotenLast = nkey; persistLocal();
   }
   function kmPendingPanel(c) {
     const pend = kmPendingList();
@@ -4104,6 +4116,8 @@
   function termSelect(c) {
     return `<label class="sel"><span class="sr">Zeitraum</span><select data-change="setZTerm">${termsFor(levelOf(c)).map(t => `<option value="${t.key}" ${t.key === S.zTerm ? 'selected' : ''}>${t.label} (${fmtISO(t.from)}–${fmtISO(t.to)})</option>`).join('')}</select></label>`;
   }
+  // Blaue Briefe gibt es frühestens ab Klasse 6
+  const hatBlaueBriefe = c => { if (!c || isSII(c)) return true; const m = String(c.name || '').match(/\d+/); return !m || +m[0] >= 6; };
   function viewZeugnis() {
     const c = ensureClass();
     if (!c) return emptyState('Noch kein Kurs angelegt', '', `<button type="button" class="btn primary" data-action="newClass">${icon('plus')} Kurs anlegen</button>`);
@@ -4111,9 +4125,9 @@
     if (!S.zTerm || !terms.some(t => t.key === S.zTerm)) { const t = todayISO(); S.zTerm = (terms.find(x => x.zeugnis && t >= x.from && t <= x.to) || terms.find(x => x.zeugnis)).key; }
     const ws = warnInfo(c).filter(w => w.was4 && w.drift && !w.warned).length;
     const sii = isSII(c);
-    const zt = S.zTab === 'warn' || (S.zTab === 'somi' && sii) ? S.zTab : 'noten';
+    const zt = (S.zTab === 'warn' && hatBlaueBriefe(c)) || (S.zTab === 'somi' && sii) ? S.zTab : 'noten';
     let html = `<div class="toolbar">${classSelect()}${zt === 'noten' ? termSelect(c) : zt === 'somi' ? quarterSelect(c) : ''}</div>
-      <div class="seg full"><button type="button" data-action="zTab" data-tab="noten" class="${zt === 'noten' ? 'on' : ''}">Zeugnisnoten</button>${sii ? `<button type="button" data-action="zTab" data-tab="somi" class="${zt === 'somi' ? 'on' : ''}">SoMi-Quartalsnoten</button>` : ''}<button type="button" data-action="zTab" data-tab="warn" class="${zt === 'warn' ? 'on' : ''}">Blaue Briefe${ws ? ` <span class="badge">${ws}</span>` : ''}</button></div>`;
+      <div class="seg full"><button type="button" data-action="zTab" data-tab="noten" class="${zt === 'noten' ? 'on' : ''}">Zeugnisnoten</button>${sii ? `<button type="button" data-action="zTab" data-tab="somi" class="${zt === 'somi' ? 'on' : ''}">SoMi-Quartalsnoten</button>` : ''}${hatBlaueBriefe(c) ? `<button type="button" data-action="zTab" data-tab="warn" class="${zt === 'warn' ? 'on' : ''}">Blaue Briefe${ws ? ` <span class="badge">${ws}</span>` : ''}</button>` : ''}</div>`;
     if (zt === 'warn') return html + viewWarn(c);
     if (zt === 'somi') return html + viewSomiQ(c);
     const t = terms.find(x => x.key === S.zTerm);
@@ -4282,10 +4296,32 @@
     let root = $('#print-root');
     if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
     root.innerHTML = `<div class="print-doc"><header><img src="icons/icon.svg" alt="" width="28" height="28"><div><h1>${esc(title)}</h1><p>Stand: ${fmtISO(todayISO(), true)} · vertraulich – nach Gebrauch vernichten</p></div></header>${html}</div>`;
-    document.body.classList.add('printing');
-    setTimeout(() => window.print(), 80);
+    root.insertAdjacentHTML('beforeend', `<div class="print-bar"><button type="button" class="btn primary" data-pa="print">${icon('print')} Drucken</button>
+      <button type="button" class="btn" data-pa="share">${icon('upload')} Teilen / PDF</button><button type="button" class="btn" data-pa="close">Schließen</button></div>`);
+    root.dataset.title = title;
+    document.body.classList.add('print-preview');
+    root.scrollTop = 0;
+    if (!root.dataset.wired) {
+      root.dataset.wired = '1';
+      root.addEventListener('click', async e => {
+        const b = e.target.closest('[data-pa]'); if (!b) return;
+        if (b.dataset.pa === 'close') return printClose();
+        if (b.dataset.pa === 'print') { document.body.classList.add('printing'); setTimeout(() => window.print(), 60); return; }
+        // Teilen: eigenständige HTML-Datei (in Safari öffnen → Drucken bzw. als PDF sichern)
+        const css = [...document.styleSheets].map(sh => { try { return [...sh.cssRules].map(r => r.cssText).join('\n'); } catch { return ''; } }).join('\n');
+        const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(root.dataset.title)}</title><style>${css}
+          body{background:#fff;color:#111;margin:16px} .print-bar{display:none!important}</style></head><body class="printing print-file"><div id="print-root">${root.querySelector('.print-doc').outerHTML}</div></body></html>`;
+        const name = `${root.dataset.title}.html`.replace(/[\\/:*?"<>|]/g, '-');
+        const file = new File([html], name, { type: 'text/html' });
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: root.dataset.title });
+          else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+        } catch (err) { if (err?.name !== 'AbortError') toast('Teilen hat nicht geklappt: ' + err.message, { error: true }); }
+      });
+    }
   }
-  window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); const r = $('#print-root'); if (r) r.innerHTML = ''; });
+  function printClose() { document.body.classList.remove('print-preview', 'printing'); const r = $('#print-root'); if (r) r.innerHTML = ''; }
+  window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); });
   function printSheet(sid) {
     const s = S.data.students[sid], c = S.data.classes[s.classId];
     const terms = termsFor(levelOf(c));
@@ -4359,6 +4395,10 @@
       ${cs.map(c => `<button type="button" class="ctab ${c.id === activeId ? 'on' : ''}" ${ccStyle(c)} data-action="openCourse" data-cid="${c.id}"><i></i>${esc(c.name)}<small>${esc(c.subject || '')}</small></button>`).join('')}
       <button type="button" class="ctab add" data-action="newClass" aria-label="Neuen Kurs anlegen">${icon('plus')}</button></div>`;
   }
+  // Fahne hinter dem Kurs: Englisch → Union Jack, Deutsch → Deutschland
+  const FLAG_UK = '<svg class="flag" viewBox="0 0 60 30" aria-label="Englisch"><clipPath id="fuk"><path d="M0 0v30h60V0z"/></clipPath><clipPath id="fuk2"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><g clip-path="url(#fuk)"><path d="M0 0v30h60V0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0l60 30m0-30L0 30" clip-path="url(#fuk2)" stroke="#C8102E" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></g></svg>';
+  const FLAG_DE = '<svg class="flag" viewBox="0 0 5 3" aria-label="Deutsch"><path d="M0 0h5v1H0z" fill="#000"/><path d="M0 1h5v1H0z" fill="#DD0000"/><path d="M0 2h5v1H0z" fill="#FFCE00"/></svg>';
+  const flagOf = c => { const t = `${c?.name || ''} ${c?.subject || ''}`; return /englisch/i.test(t) ? FLAG_UK : /deutsch/i.test(t) ? FLAG_DE : ''; };
   function viewKurse() {
     const cs = classesSorted();
     if (S.courseId) {
@@ -4368,6 +4408,15 @@
     }
     let html = pageHead('Kurse', cs.length ? `${plural(cs.length, 'Kurs', 'Kurse')} · ${sum(cs.map(weeklyHours))} Wochenstunden` : '', `<button type="button" class="btn small" data-action="newClass">${icon('plus')} Kurs</button>`);
     if (!cs.length) return html + emptyState('Noch keine Kurse', 'Importiere die Ganzjahresplanung (Reiter „Jahr“) oder lege Kurse von Hand an. Die Namen der Kinder kannst du direkt aus Excel einfügen.', `<button type="button" class="btn primary" data-action="newClass">${icon('plus')} Kurs anlegen</button>`);
+    html += `<div class="seg full kurse-seg"><button type="button" data-action="kurseTab" data-t="kurse" class="${S.kurseTab !== 'sicherung' ? 'on' : ''}">${icon('users')} Kurse</button><button type="button" data-action="kurseTab" data-t="sicherung" class="${S.kurseTab === 'sicherung' ? 'on' : ''}">${icon('save')} Sicherung</button></div>`;
+    if (S.kurseTab === 'sicherung') return html + `<section class="panel">
+        <h2>${icon('sheet')} Noten als Excel</h2>
+        <p class="muted small">Eine Datei mit einem Blatt „Übersicht“ und je Kurs einem Blatt: Namen, Ø mündlich mit Tendenz, SoMi, schriftlich, Vorschlag und Zeugnisnote je Halbjahr, alle Arbeiten und Tests sowie die mündlichen Noten je Woche. Die Datei entsteht nur auf diesem Gerät und enthält Klarnamen – sicher aufbewahren.</p>
+        <button type="button" class="btn primary" data-action="notenExcel">${icon('download')} Excel-Datei speichern</button></section>
+      <section class="panel">
+        <h2>${icon('shield')} Verschlüsselte Sicherung</h2>
+        <p class="muted small">Alle Daten samt Namensliste, nur mit deinem Notenheft-Passwort lesbar. Damit lässt sich alles wiederherstellen (Mehr → Sicherung einspielen). Zusätzlich legt der PC montags und donnerstags automatisch eine Sicherung und eine Excel-Datei mit Namen in deinen OneDrive (Klausuren &amp; Noten → Notenheft-Sicherung → Schuljahr → Halbjahr → Kalenderwoche).</p>
+        <button type="button" class="btn" data-action="backupDownload">${icon('download')} Verschlüsselte Sicherung speichern</button></section>`;
     html += courseRegister(null);
     const [hf, ht] = rangeFor('hj');
     html += `<div class="course-grid">${cs.map(c => {
@@ -4376,7 +4425,7 @@
       const n = studentsOf(c.id).length;
       const avgs = overviewRows(c, hf, ht).map(r => r.st.avg).filter(x => x != null);
       return `<button type="button" class="course-card" ${ccStyle(c)} data-action="openCourse" data-cid="${c.id}">
-        <div class="cc-head"><span class="cc-name">${esc(c.name)}</span><span class="cc-subj">${esc(c.subject || '')}</span><span class="cc-level">${levelLabel(c)}</span></div>
+        <div class="cc-head"><span class="cc-name">${esc(c.name)}</span><span class="cc-subj">${esc(c.subject || '')}${flagOf(c)}</span><span class="cc-level">${levelLabel(c)}</span></div>
         <div class="cc-meta"><span>${weeklyHours(c)} Std./Woche</span><span>${plural(n, 'Kind', 'Kinder')}</span>${avgs.length ? `<span>Ø ${fmtNum(mean(avgs))}</span>` : ''}</div>
         <div class="cc-lines">
           ${nl ? `<span>${icon('clock')}Nächste Stunde ${nl.date === todayISO() ? 'heute' : fmtShort(nl.date)}${nl.cancelled ? ' · <b class="x">entfällt</b>' : ''}</span>` : ''}
@@ -4430,19 +4479,12 @@
     const cTodos = openTodos().filter(x => x.classId === c.id).sort(todoSort);
     return `<section class="section"><div class="section-head"><h2>${picto('todo', 'sm')} To-dos</h2><span class="head-links"><button type="button" class="link" data-action="newTodo" data-cid="${c.id}" data-date="">${icon('plus')} To-do</button><button type="button" class="link" data-action="todoFilterGo" data-f="${c.id}">Alle ${icon('right')}</button></span></div>
         ${todoList(cTodos, { course: false }, 'Für diesen Kurs ist nichts offen.')}</section>
-      <section class="section">
-        <div class="section-head"><h2>Bis ${st.next ? esc(st.next.name) : fmtISO(st.to, true)}</h2><span class="muted small">${fmtISO(st.from)}–${fmtISO(st.to, true)}</span></div>
-        <div class="sumbar four">
-          <div class="sum-item"><strong>${st.soll}</strong><span>laut Plan</span></div>
-          <div class="sum-item ok"><strong>${st.gehalten}</strong><span>gehalten</span></div>
-          <div class="sum-item aus"><strong>${st.ausgefallen}</strong><span>ausgefallen</span></div>
-          <div class="sum-item"><strong>${st.rest}</strong><span>verbleibend</span></div>
-        </div>
-        <div class="stack-bar" ${ccStyle(c)} title="gehalten ${pct(st.gehalten)} % · ausgefallen ${pct(st.ausgefallen)} % · verbleibend ${pct(st.rest)} %">
-          <i class="ok" style="width:${pct(st.gehalten)}%"></i><i class="warn" style="width:${pct(st.ausgefallen)}%"></i><i class="rest" style="width:${pct(st.rest)}%"></i>
-        </div>
-      </section>
       <section class="section"><div class="section-head"><h2>Prüfungen</h2><button type="button" class="link" data-action="newEvent" data-cid="${c.id}" data-type="pruefung">${icon('plus')} Prüfung</button></div>
+        ${(() => { const x = examsLeft(c); return `<div class="sumbar">
+          <div class="sum-item exam ${x.open ? '' : 'zero'}"><strong>${x.open}</strong><span>noch offen bis Halbjahresende</span></div>
+          <div class="sum-item less ${Math.min(x.open, x.planned) ? '' : 'zero'}"><strong>${Math.min(x.open, x.planned)}</strong><span>davon terminiert</span></div>
+          <div class="sum-item aus ${x.unplanned ? '' : 'zero'}"><strong>${x.unplanned}</strong><span>nicht terminiert</span></div></div>
+          <p class="muted small pad">${x.hj === 'HJ1' ? '1.' : '2.'} Halbjahr: ${plural(x.need, 'Arbeit', 'Arbeiten')} vorgesehen, ${x.written} geschrieben.</p>`; })()}
         ${exams.length ? `<div class="glist">${exams.map(examTile).join('')}</div>` : '<p class="empty-line">Keine anstehenden Prüfungen.</p>'}
       </section>
       <section class="section"><div class="section-head"><h2>Nächste Stunden</h2><button type="button" class="link" data-action="newEvent" data-cid="${c.id}" data-type="ausfall">${icon('ban')} Ausfall</button></div>
@@ -4456,12 +4498,45 @@
       })()}</section>` : ''}`;
 
   }
+  // Drag & Drop in der Namensliste: Griff festhalten, ziehen, loslassen → neue Listenreihenfolge (pos)
+  (function dndInit() {
+    let drag = null;
+    document.addEventListener('pointerdown', e => {
+      const h = e.target.closest('.stud-list[data-dnd] .drag-h'); if (!h) return;
+      const li = h.closest('li'), ul = li.parentElement;
+      e.preventDefault();
+      drag = { li, ul, y0: e.clientY, id: e.pointerId };
+      li.classList.add('dragging');
+      try { h.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    });
+    document.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      e.preventDefault();
+      const { li, ul } = drag;
+      const sibs = [...ul.children].filter(x => x !== li);
+      const before = sibs.find(x => { const r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; }) || null;
+      if (before !== li.nextElementSibling) ul.insertBefore(li, before);
+    }, { passive: false });
+    const end = e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const { li, ul } = drag; drag = null;
+      li.classList.remove('dragging');
+      const ids = [...ul.children].map(x => x.dataset.sid);
+      if (ids.every((sid, i) => S.data.students[sid]?.pos === i + 1)) return;
+      commit(d => ids.forEach((sid, i) => { const st = d.students[sid]; if (st && st.pos !== i + 1) d.students[sid] = Object.assign({}, st, { pos: i + 1, updatedAt: now() }); }));
+      S.nameSort = 'liste'; saveUI();
+      toast('Reihenfolge gespeichert');
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  })();
   function courseStudents(c) {
     const sts = studentsOf(c.id);
     const others = classesSorted().filter(o => o.id !== c.id && studentsOf(o.id).length);
     return `<section class="panel">
         <h3>${plural(sts.length, 'Kind', 'Kinder')}</h3>
-        ${sts.length ? `<ul class="stud-list">${sts.map(s => `<li><span>${esc(s.name)} <small class="muted">${esc(s.km || s.code || '')}</small></span>
+        ${sts.length > 1 ? '<p class="muted small">Reihenfolge ändern: Kind am Griff ☰ festhalten und verschieben. Sie gilt für „Sortieren: Liste“.</p>' : ''}
+        ${sts.length ? `<ul class="stud-list" data-dnd="${c.id}">${sts.map(s => `<li data-sid="${s.id}"><span class="drag-h" aria-label="Verschieben" title="Verschieben">☰</span><span>${esc(s.name)} <small class="muted">${esc(s.km || s.code || '')}</small></span>
           <button type="button" class="icon-btn plain" data-action="renameStudent" data-sid="${s.id}" aria-label="${esc(s.name)} umbenennen">${icon('pencil')}</button>
           <button type="button" class="icon-btn plain" data-action="deleteStudent" data-sid="${s.id}" aria-label="${esc(s.name)} entfernen">${icon('trash')}</button></li>`).join('')}</ul>` : '<p class="muted small">Noch keine Kinder eingetragen.</p>'}
         <form data-submit="addStudents">
@@ -4598,15 +4673,15 @@
     if (alt.length) html += `<div class="ma-hint warn">${icon('info')}<span>Es sind noch ${plural(alt.length, 'Vertretung', 'Vertretungen')} aus dem letzten Schuljahr gespeichert. Können sie gelöscht werden?</span><button type="button" class="btn small" data-action="maAltLoeschen">Löschen …</button></div>`;
     const ok = st.saldo >= MA_SCHWELLE;
     html += glance([
-      { value: String(st.plus), label: 'Std. Mehrarbeit', tone: st.plus ? 'less' : 'less zero' },
-      { value: st.minus ? '−' + st.minus : '0', label: 'ersatzlos ausgefallen', tone: st.minus ? 'term' : 'term zero' },
-      { value: String(st.saldo), label: 'verrechnet', tone: ok ? 'tdo' : 'tdo zero' },
-      { value: ok ? '✓' : String(Math.max(0, MA_SCHWELLE - st.saldo)), label: ok ? 'Antrag möglich' : `fehlen bis ${MA_SCHWELLE} Std.`, tone: ok ? 'exam' : 'exam zero' }
+      { value: String(st.plus), label: 'Std. Mehrarbeit', tone: st.plus ? 'less' : 'less zero', action: 'scrollTo', data: 'data-target="ma-vertr"' },
+      { value: st.minus ? '−' + st.minus : '0', label: 'ersatzlos ausgefallen', tone: st.minus ? 'term' : 'term zero', action: 'scrollTo', data: 'data-target="ma-aus"' },
+      { value: String(st.saldo), label: 'verrechnet', tone: ok ? 'tdo' : 'tdo zero', action: 'scrollTo', data: 'data-target="ma-antrag"' },
+      { value: ok ? '✓' : String(Math.max(0, MA_SCHWELLE - st.saldo)), label: ok ? 'Antrag möglich' : `fehlen bis ${MA_SCHWELLE} Std.`, tone: ok ? 'exam' : 'exam zero', action: 'scrollTo', data: 'data-target="ma-antrag"' }
     ], true);
     if (st.offen) html += `<p class="muted small ma-note">${plural(st.offen, 'Stunde ist', 'Stunden sind')} noch nicht gehalten (geplant) und schon mitgezählt.</p>`;
     if (st.ohneKuerzel) html += `<div class="ma-hint">${icon('edit')}<span>Bei ${plural(st.ohneKuerzel, 'Vertretung', 'Vertretungen')} fehlt das Kürzel der vertretenen Lehrkraft – das steht nicht im Untis-Kalender. Antippen und eintragen.</span></div>`;
     // Vertretungen
-    html += `<section class="section"><div class="section-head"><h2>${picto('lesson', 'sm')} Vertretungen &amp; zusätzliche Stunden</h2><button type="button" class="link" data-action="maNew">${icon('plus')} Nachtragen</button></div>`;
+    html += `<section class="section" id="ma-vertr"><div class="section-head"><h2>${picto('lesson', 'sm')} Vertretungen &amp; zusätzliche Stunden</h2><button type="button" class="link" data-action="maNew">${icon('plus')} Nachtragen</button></div>`;
     html += st.ma.length ? `<div class="ev-list">${st.ma.map(m => `<div class="ma-row ${m.zaehlt === false ? 'off' : ''} ${maDone(m) ? '' : 'plan'}">
         <label class="ma-chk" title="zählt als Mehrarbeit"><input type="checkbox" data-change="maZaehlt" data-id="${esc(m.id)}" ${m.zaehlt !== false ? 'checked' : ''}></label>
         <button type="button" class="ma-main" data-action="maOpen" data-mid="${esc(m.id)}">
@@ -4617,7 +4692,7 @@
       : `<p class="empty-line">In diesem Monat keine Vertretungen${ym + '-01' < MA_START ? ' (gespeichert wird ab November 2026)' : ''}.</p>`;
     html += '</section>';
     // Ausfälle
-    html += `<section class="section"><div class="section-head"><h2>${picto('ausfall', 'sm')} Ausgefallene Stunden</h2><button type="button" class="link" data-action="maKrank">${icon('plus')} Krank …</button></div>
+    html += `<section class="section" id="ma-aus"><div class="section-head"><h2>${picto('ausfall', 'sm')} Ausgefallene Stunden</h2><button type="button" class="link" data-action="maKrank">${icon('plus')} Krank …</button></div>
       <p class="muted small ma-note"><b>dienstlich</b> (Klassenfahrt, Konferenz …) und <b>krank</b> zählen als Iststunde und stehen nicht im Antrag. Nur <b>ersatzlos</b> (echter Ausfall ohne anderes Dienstgeschäft) steht in der Spalte „ausgefallene Stunde“ und wird abgezogen.</p>`;
     const nOffen = st.aus.filter(r => ausOffen(r.ev)).length;
     if (nOffen) html += `<div class="ma-hint">${icon('info')}<span>${plural(nOffen, 'Ausfall', 'Ausfälle')} laut WebUntis noch nicht entschieden – erwähnen (ersatzlos) oder nicht?</span></div>`;
@@ -4631,7 +4706,7 @@
         <span class="ev-main"><strong>${esc(r.fach)}</strong><small>${pLabel(r.from, r.to)} · entfällt laut WebUntis – dienstlich, zählt als Iststunde</small></span>
         <span class="ev-right"><b>${r.hours}</b><small>Std. · zählt nicht</small></span></span></div>`).join('')}</div>`;
     html += '</section>';
-    html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Für den Antrag</h2></div>
+    html += `<section class="section" id="ma-antrag"><div class="section-head"><h2>${picto('termin', 'sm')} Für den Antrag</h2></div>
       <p class="muted small">Ab ${MA_SCHWELLE} verrechneten Stunden im Kalendermonat kannst du die Vergütung beantragen. Am letzten Schultag des Monats erscheint dafür ein To-do.${S.data.todos['ma-antrag-' + ym]?.gesendet ? ` Verschickt am ${fmtISO(S.data.todos['ma-antrag-' + ym].gesendet.slice(0, 10), true)}.` : ''}</p>
       <div class="ma-btns"><button type="button" class="btn ${ok ? 'primary' : ''}" data-action="maAntrag" data-ym="${ym}">${icon('mail')} Antrag per Mail</button>
       <button type="button" class="btn" data-action="maCopy" data-ym="${ym}">${icon('list')} Liste kopieren</button></div></section>`;
@@ -4786,6 +4861,19 @@
     const evs = live(S.data.events).filter(e => e.date >= addDaysISO(t, -7)).sort((a, b) => a.date.localeCompare(b.date));
     const tc = termCfg();
     return pageHead('Einstellungen') + `
+      <section class="panel">
+        <h2>${icon('exam')} Klausurmanager</h2>
+        <p class="muted small">Die Noten jeder im Klausurmanager ausgewerteten Klausur kommen automatisch unter <strong>Kurs → Arbeiten/Klausuren</strong> an. Übertragen werden nur Kürzel und Noten – verschlüsselt, lesbar nur für dein Notenheft.</p>
+        ${kmKey() ? `<p class="ok-t small">Verbindungscode erstellt am ${fmtDate(new Date(kmKey().createdAt), true)}.${kmPendingList().length ? ` ${plural(kmPendingList().length, 'Ergebnis wartet', 'Ergebnisse warten')} auf Zuordnung (Kurs → Arbeiten/Klausuren).` : ''}</p>` : '<p class="muted small">Noch nicht verbunden: „Verbindungscode“ antippen und den Code einmal am PC an den Klausurmanager geben.</p>'}
+        ${live(S.data.calendars).length ? `<p class="muted small">Kalender vom PC: ${live(S.data.calendars).map(c => `${esc(c.name)} (${plural((c.termine || []).length, 'Termin', 'Termine')}, Stand ${fmtDate(new Date(c.stand), true)})`).join(' · ')}</p>` : ''}
+        <div class="btnrow">
+          <button type="button" class="btn ${kmKey() ? '' : 'primary'}" data-action="kmCode">${icon('key')} Verbindungscode</button>
+          ${kmKey() && ghReady() ? `<button type="button" class="btn" data-action="kmFetch">${icon('download')} Jetzt abholen</button>` : ''}
+          ${kmKey() ? `<button type="button" class="btn" data-action="kmPaste">${icon('copy')} Ergebnis einfügen</button>` : ''}
+          ${kmKey() ? `<label class="btn file-btn">${icon('upload')} Ergebnisdatei importieren<input type="file" accept=".json,application/json" data-change="importKm"></label>` : ''}
+        </div>
+      </section>
+
       <section class="panel slim"><label class="field"><span>Dein Name für die Begrüßung</span><input data-change="myName" maxlength="30" value="${esc(S.data.prefs?.profil?.name || '')}" placeholder="z. B. Andi"></label></section>
       <section class="panel slim"><label class="check"><input type="checkbox" data-change="startMenu" ${S.startMenu !== false ? 'checked' : ''}><span><strong>Beim Öffnen das Startmenü zeigen</strong><br><span class="muted small">Sonst öffnet die App direkt die zuletzt benutzte Ansicht. Zum Startmenü kommst du immer über „Start“ bzw. das Notenheft-Symbol oben links.</span></span></label></section>
       <section class="panel">
@@ -4811,12 +4899,6 @@
         <h2>${icon('sheet')} Ganzjahresplanung importieren</h2>
         <p class="muted small">Liest aus deiner Excel-Datei den Stundenplan („Raster“), die Stundenzeiten, Prüfungen („Countdown“), Ausfälle und Ferien. Erneutes Importieren aktualisiert die Einträge.</p>
         <label class="btn primary file-btn">${icon('upload')} Excel-Datei wählen<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-change="importXlsx"></label>
-      </section>
-
-      <section class="panel">
-        <h2>${icon('flag')} Termine, Prüfungen &amp; Ausfälle</h2>
-        ${evs.length ? `<div class="mini-list">${evs.map(eventRow).join('')}</div>` : '<p class="muted small">Keine anstehenden Einträge.</p>'}
-        <div class="btnrow"><button type="button" class="btn" data-action="newEvent">${icon('plus')} Neuer Eintrag</button></div>
       </section>
 
       <section class="panel">
@@ -4865,19 +4947,6 @@
             <button type="button" class="btn ghost danger" data-action="removeGh">Trennen</button>` : ''}
           </div>
         </form>
-      </section>
-
-      <section class="panel">
-        <h2>${icon('exam')} Klausurmanager</h2>
-        <p class="muted small">Die Noten jeder im Klausurmanager ausgewerteten Klausur kommen automatisch unter <strong>Kurs → Arbeiten/Klausuren</strong> an. Übertragen werden nur Kürzel und Noten – verschlüsselt, lesbar nur für dein Notenheft.</p>
-        ${kmKey() ? `<p class="ok-t small">Verbindungscode erstellt am ${fmtDate(new Date(kmKey().createdAt), true)}.${kmPendingList().length ? ` ${plural(kmPendingList().length, 'Ergebnis wartet', 'Ergebnisse warten')} auf Zuordnung (Kurs → Arbeiten/Klausuren).` : ''}</p>` : '<p class="muted small">Noch nicht verbunden: „Verbindungscode“ antippen und den Code einmal am PC an den Klausurmanager geben.</p>'}
-        ${live(S.data.calendars).length ? `<p class="muted small">Kalender vom PC: ${live(S.data.calendars).map(c => `${esc(c.name)} (${plural((c.termine || []).length, 'Termin', 'Termine')}, Stand ${fmtDate(new Date(c.stand), true)})`).join(' · ')}</p>` : ''}
-        <div class="btnrow">
-          <button type="button" class="btn ${kmKey() ? '' : 'primary'}" data-action="kmCode">${icon('key')} Verbindungscode</button>
-          ${kmKey() && ghReady() ? `<button type="button" class="btn" data-action="kmFetch">${icon('download')} Jetzt abholen</button>` : ''}
-          ${kmKey() ? `<button type="button" class="btn" data-action="kmPaste">${icon('copy')} Ergebnis einfügen</button>` : ''}
-          ${kmKey() ? `<label class="btn file-btn">${icon('upload')} Ergebnisdatei importieren<input type="file" accept=".json,application/json" data-change="importKm"></label>` : ''}
-        </div>
       </section>
 
       <section class="panel">
@@ -5601,6 +5670,99 @@
     }
     downloadCSV(`Notenheft_${safeName(cls.name)}_${safeName(cls.subject || '')}_Eintraege_${todayISO()}.csv`, out);
   }
+  /* ---------- Notenexport als Excel (nur auf dem Gerät; Namen verlassen es nicht) ---------- */
+  const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function zipStore(files) { // [{ name, data: Uint8Array }] → ZIP ohne Kompression (reicht für Excel)
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+    for (const f of files) {
+      const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint32(14, crc, true); h.setUint32(18, sz, true); h.setUint32(22, sz, true); h.setUint16(26, nm.length, true);
+      parts.push(new Uint8Array(h.buffer), nm, f.data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+      central.push(new Uint8Array(ch.buffer), nm);
+      off += 30 + nm.length + sz;
+    }
+    const cs = central.reduce((a, x) => a + x.length, 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cs, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xlsxBlob(sheets) { // [{ name, rows: [[Wert | { v, s }]], cols: [Breite] }]; s: 1 = fett, 2 = Zahl 0,00, 3 = Titel
+    const enc = new TextEncoder(), x = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const colL = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+    const used = new Set();
+    const nameOf = n => { let b = String(n).replace(/[\[\]:*?/\\]/g, '-').slice(0, 31) || 'Blatt', k = b, i = 2; while (used.has(k.toLowerCase())) k = b.slice(0, 28) + ' ' + i++; used.add(k.toLowerCase()); return k; };
+    const names = sheets.map(sh => nameOf(sh.name));
+    const sheetXml = sh => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0">${sh.freeze ? `<pane xSplit="1" ySplit="${sh.freeze}" topLeftCell="B${sh.freeze + 1}" activePane="bottomRight" state="frozen"/>` : ''}</sheetView></sheetViews>`
+      + (sh.cols ? `<cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '')
+      + `<sheetData>${sh.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((c0, ci) => { if (c0 == null || c0 === '') return ''; const c = typeof c0 === 'object' ? c0 : { v: c0 }; const ref = colL(ci) + (ri + 1), st = c.s ? ` s="${c.s}"` : '';
+        return typeof c.v === 'number' && isFinite(c.v) ? `<c r="${ref}"${st || ' s="2"'}><v>${c.v}</v></c>` : `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${x(c.v)}</t></is></c>`; }).join('')}</row>`).join('')}</sheetData></worksheet>`;
+    const files = [
+      ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${names.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+      ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+      ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, i) => `<sheet name="${x(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+      ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+      ['xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.00"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE2E8F0"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="4"><xf/><xf fontId="1" fillId="2" applyFont="1" applyFill="1"/><xf numFmtId="164" applyNumberFormat="1"/><xf fontId="2" applyFont="1"/></cellXfs></styleSheet>`],
+      ...sheets.map((sh, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sh)])
+    ];
+    return zipStore(files.map(([name, t]) => ({ name, data: enc.encode(t) })));
+  }
+  const TREND_T = { up: '↑ besser', down: '↓ schlechter', flat: '→ gleich' };
+  function notenExportSheets(pseudo = false) { // pseudo: statt Namen nur Kürzel (für den PC, der die Namen selbst einsetzt)
+    const tc = termCfg(), t = todayISO(), cs = classesSorted().filter(c => studentsOf(c.id).length);
+    const H = v => ({ v, s: 1 }), N = v => v == null ? '' : Math.round(v * 100) / 100;
+    const over = [[{ v: `Notenheft – Notenübersicht Schuljahr ${tc.sy}/${String(tc.sy + 1).slice(2)} · Stand ${fmtISO(t, true)}`, s: 3 }], [],
+      [H('Kurs'), H('Fach'), H('Kinder'), H('Ø mündlich (Halbjahr)'), H('Ø Zeugnis 1. HJ'), H('Ø Zeugnis 2. HJ'), H('Arbeiten/Klausuren'), H('Tests')]];
+    const sheets = [];
+    for (const c of cs) {
+      const sts = studentsOf(c.id), zt = termsFor(levelOf(c)).filter(x => x.zeugnis);
+      const [hf, ht] = rangeFor('hj');
+      const schr = assessmentsOf(c.id, 'schriftlich'), vok = assessmentsOf(c.id, 'vokabel');
+      const ents = entriesOf(c.id, tc.start, tc.end);
+      const weeks = [...new Set(ents.map(e => weekKey(e.date)))].sort();
+      const head = [H('Name'), H('Ø mündlich'), H('Tendenz'), ...zt.flatMap(z => [H(`SoMi ${z.short}`), H(`schriftl. ${z.short}`), H(`Vorschlag ${z.short}`), H(`Zeugnis ${z.short}`), H(`Begründung ${z.short}`)]),
+        ...schr.map(a => H(`${a.title} (${fmtISO(a.date)})`)), ...vok.map(a => H(`${a.title} (${fmtISO(a.date)})`)), ...weeks.map(w => H(`KW ${isoWeek(parseISO(w))}`))];
+      const rows = [[{ v: `${clsLabel(c)} – ${levelLabel(c)} · ${plural(sts.length, 'Kind', 'Kinder')}`, s: 3 }], [], head];
+      const zAvg = zt.map(() => []), mAvg = [];
+      for (const st of sts) {
+        const se = ents.filter(e => e.studentId === st.id), m = stats(se.filter(e => e.date >= hf && e.date <= ht));
+        if (m.avg != null) mAvg.push(m.avg);
+        const row = [pseudo ? { v: st.km || st.code || '?', kz: st.km || null } : st.name, N(m.avg), TREND_T[m.trend] || ''];
+        zt.forEach((z, i) => { const r = calc(st, z, c); if (r.final != null) zAvg[i].push(r.final);
+          row.push(N(r.somi), N(r.schr), r.suggest != null ? gradeText(c, r.suggest) : '', r.final != null ? gradeText(c, r.final) : '', r.override?.reason || ''); });
+        for (const a of [...schr, ...vok]) { const r = resultOf(a.id, st.id); row.push(!r ? '' : r.value == null ? 'fehlte' : gradeText(c, r.value)); }
+        for (const w of weeks) { const es = se.filter(e => weekKey(e.date) === w); row.push(es.map(e => e.kind === 'note' ? e.grade : e.kind === 'fehlte' ? 'f' : '–').join(' ')); }
+        rows.push(row);
+      }
+      rows.push([], [H('Kursschnitt'), N(mAvg.length ? mean(mAvg) : null), '', ...zt.flatMap((z, i) => ['', '', '', zAvg[i].length ? gradeText(c, mean(zAvg[i])) : '', ''])]);
+      sheets.push({ name: `${c.name} ${c.subject || ''}`.trim(), rows, cols: [26, 11, 13, ...zt.flatMap(() => [10, 11, 12, 11, 24]), ...schr.map(() => 16), ...vok.map(() => 14), ...weeks.map(() => 8)], freeze: 3 });
+      over.push([c.name, c.subject || '', sts.length, N(mAvg.length ? mean(mAvg) : null), ...zt.slice(0, 2).map((z, i) => zAvg[i].length ? gradeText(c, mean(zAvg[i])) : ''), schr.length, vok.length]);
+    }
+    return [{ name: 'Übersicht', rows: over, cols: [14, 16, 8, 20, 16, 16, 18, 8] }, ...sheets];
+  }
+  async function notenExcel() {
+    if (missingNames()) toast(`Auf diesem Gerät fehlen ${missingNames()} Namen – dort stehen nur Kürzel.`, { ms: 6000 });
+    await saveFile(`Notenheft_Noten_${todayISO()}.xlsx`, xlsxBlob(notenExportSheets()));
+  }
+  async function sicherungKomplett(todoId) { // Zeugnis-To-do: Excel + verschlüsselte Sicherung
+    await notenExcel();
+    await backupDownload();
+    if (todoId && S.data.todos[todoId]) commit(d => { d.todos[todoId] = Object.assign({}, d.todos[todoId], { done: true, doneAt: now(), updatedAt: now() }); });
+  }
+  function zeugnisSicherungTodo() { // alle Kurse mit Zeugnisnoten → To-do „Alle Noten sichern“
+    if (!S.data) return;
+    const t = todayISO(), cs = classesSorted().filter(c => studentsOf(c.id).length);
+    if (!cs.length) return;
+    for (const key of ['HJ1', 'HJ2']) {
+      const id = `sichern-${termCfg().sy}-${key}`;
+      if (S.data.todos[id]) continue;
+      const fertig = cs.every(c => { const z = termsFor(levelOf(c)).find(x => x.key === key); return z && t >= addDaysISO(z.to, -28) && t <= addDaysISO(z.to, 21) && studentsOf(c.id).every(st => calc(st, z, c).final != null); });
+      if (!fertig) continue;
+      commit(d => { d.todos[id] = { id, auto: 'sichern', cat: 'sonst', text: `Alle Noten sichern (Zeugnis ${key === 'HJ1' ? '1.' : '2.'} Halbjahr)`, note: 'Antippen: Excel-Übersicht und verschlüsselte Sicherung speichern', classId: null, date: t, done: false, createdAt: now(), updatedAt: now() }; }, { sync: true });
+    }
+  }
   async function backupDownload() {
     const blob = await Vault.encrypt({ data: S.data, names: S.device.names || {} });
     saveFile(`Notenheft_Sicherung_${todayISO()}.json`, new Blob([JSON.stringify(blob)], { type: 'application/json' }));
@@ -5878,7 +6040,7 @@
     },
     todoToggle(d) { todoToggle(d.id); },
     todoEdit(d) { const x = S.data.todos[d.id], e = x?.eid && S.data.events[x.eid];
-      if (x && x.auto === 'mehrarbeit') maAntrag(x.ym); else if (x && x.auto === 'pruefnoten' && e && !e.deleted) examNoten(e); else if (x) todoDialog(x); },
+      if (x && x.auto === 'sichern') sicherungKomplett(x.id); else if (x && x.auto === 'mehrarbeit') maAntrag(x.ym); else if (x && x.auto === 'pruefnoten' && e && !e.deleted) examNoten(e); else if (x) todoDialog(x); },
     maAntrag(d) { maAntrag(d.ym); },
     maGrundSet(d) { const id = d.eid; commit(x => { const e = x.events[id]; if (e) x.events[id] = Object.assign({}, e, { grund: d.g, ersatzlos: d.g === 'ersatzlos', updatedAt: now() }); }); },
     newTodo(d) { todoDialog(null, { cid: d.cid || '', ...(d.date !== undefined ? { date: d.date } : {}) }); },
@@ -6165,10 +6327,12 @@
         toast(`${s.name} entfernt`);
       }
     },
+    async deleteAssess(d) { const a = S.data.assessments[d.aid]; if (a && !a.deleted) await deleteAssessment(a); },
     async deleteClass(d) {
       const c = S.data.classes[d.cid];
       const sts = studentsOf(c.id);
       const n = liveEntries().filter(e => e.classId === c.id).length;
+      if (!await confirmDialog(`Kurs ${esc(clsLabel(c))} löschen?`, 'Der Kurs wird mit allen Kindern, Noten, Arbeiten und To-dos gelöscht.', 'Weiter', true)) return;
       if (!await confirmDialog('Kurs löschen', `Kurs <strong>${esc(clsLabel(c))}</strong> mit ${plural(sts.length, 'Kind', 'Kindern')}, ${plural(n, 'Noteneintrag', 'Noteneinträgen')} sowie allen Arbeiten und To-dos des Kurses endgültig löschen?`, 'Endgültig löschen', true)) return;
       S.courseId = null;
       commit(dd => {
@@ -6221,6 +6385,8 @@
     importNameList() { importNameList(); },
     changePassword() { changePassword(); },
     backupDownload() { backupDownload(); },
+    notenExcel() { notenExcel(); },
+    kurseTab(d) { S.kurseTab = d.t; render(); },
     async removeGh() {
       if (!await confirmDialog('Verbindung trennen', 'Dieses Gerät synchronisiert dann nicht mehr. Die Daten in GitHub bleiben erhalten. Tipp: Das Token auf github.com widerrufen, wenn du es nicht mehr brauchst.', 'Trennen')) return;
       S.device.gh = null; S.sync.state = 'idle'; S.sync.repoOk = false;
@@ -6328,8 +6494,27 @@
     if (!el || !$('#app').contains(el)) return;
     C[el.dataset.change]?.(el.value, el, e);
   });
+  // Suche am iPhone: Suchfeld direkt unter den festen Kopf holen, damit die Treffer über der Tastatur stehen
+  function pinSearch() {
+    const i = document.getElementById('ksq'); if (!i || document.activeElement !== i) return;
+    const box = i.closest('.ksearch') || i, cs = getComputedStyle(document.documentElement);
+    const top = (parseFloat(cs.getPropertyValue('--toph')) || 0) + (parseFloat(cs.getPropertyValue('--headh')) || 0);
+    const y = box.getBoundingClientRect().top + window.scrollY - top - 6;
+    window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+  }
+  document.addEventListener('focusin', e => {
+    if (e.target.id !== 'ksq') return;
+    document.body.classList.add('ksearching'); stickyVars();
+    setTimeout(pinSearch, 60); setTimeout(pinSearch, 350);
+  });
+  document.addEventListener('focusout', e => {
+    if (e.target.id !== 'ksq') return;
+    setTimeout(() => { if (document.activeElement?.id !== 'ksq') { document.body.classList.remove('ksearching'); stickyVars(); } }, 150);
+  });
+  window.visualViewport?.addEventListener('resize', () => setTimeout(pinSearch, 30));
   document.addEventListener('input', e => {
     if (e.target.id !== 'ksq' || !$('#app').contains(e.target)) return;
+    setTimeout(pinSearch, 0);
     S.kidQ = e.target.value;
     const ctx = kidCtx(); if (!ctx) return;
     const q = S.kidQ.trim();
@@ -6404,5 +6589,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, ausOffen, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, printSheet, notenExportSheets, xlsxBlob, zeugnisSicherungTodo, ausOffen, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
 })();
