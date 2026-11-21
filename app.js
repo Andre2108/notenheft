@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.4';
+  const APP_VERSION = '7.4.1';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -3804,6 +3804,12 @@
     };
   }
   // Mehrarbeit: jede neue Untis-Stunde (Vertretung oder zusätzliche Stunde) ab November dauerhaft merken
+  // Nebenaufsicht: Untis-Stunde zeitgleich mit eigenem Unterricht, der stattfindet (oder ausdrücklich „Aufsicht“) –
+  // keine zusätzliche Unterrichtsstunde, zählt nicht als Mehrarbeit
+  function isNebenaufsicht(date, x) {
+    if (/aufsicht|mitbetreu/i.test(`${x.fach || ''} ${x.titel || ''}`)) return true;
+    return planLessonsOn(date).some(l => !l.cancelled && !l.away && l.start && x.start && overlapMin(l.start, l.end, x.start, x.end) > 0);
+  }
   function maSync(d, termine, stand) {
     if (!d.mehrarbeit) d.mehrarbeit = {};
     untisCache = null;
@@ -3813,15 +3819,19 @@
       if (date < MA_START) continue;
       const u = untisDay(date);
       for (const x of u.fremd.concat(u.eigen)) {
-        const id = 'ma-' + x.id, prev = d.mehrarbeit[id];
+        const id = 'ma-' + x.id; let prev = d.mehrarbeit[id];
         da.add(id);
         if (prev && prev.deleted && !prev.revoked) continue; // vom Nutzer gelöscht: nicht wiederholen
         const neu = { date, from: x.from, to: x.to, start: x.start, end: x.end, fach: x.fach, klassen: x.klassen.join(', '), ort: x.ort || '', ber: x.ber, classId: x.cls ? x.cls.id : null };
+        const neben = isNebenaufsicht(date, x);
+        if (prev && !prev.deleted && prev.neben === undefined) { // einmal prüfen; danach entscheidet der Haken
+          d.mehrarbeit[id] = prev = Object.assign({}, prev, { neben }, neben ? { zaehlt: false } : {}, { updatedAt: stand });
+        }
         if (prev && !prev.deleted) {
           if (prev.edited) continue;
           if (Object.keys(neu).every(k => String(prev[k] ?? '') === String(neu[k] ?? ''))) continue;
           d.mehrarbeit[id] = Object.assign({}, prev, neu, { updatedAt: stand });
-        } else d.mehrarbeit[id] = Object.assign({ id, quelle: 'untis', fuer: '', zaehlt: true, createdAt: stand }, neu, { updatedAt: stand });
+        } else d.mehrarbeit[id] = Object.assign({ id, quelle: 'untis', fuer: '', zaehlt: !neben, neben, createdAt: stand }, neu, { updatedAt: stand });
       }
     }
     // in Untis wieder verschwunden (und noch nicht gehalten) → entfernen
@@ -4593,7 +4603,7 @@
         <button type="button" class="ma-main" data-action="maOpen" data-mid="${esc(m.id)}">
           <span class="ev-date"><b>${WD[wdOf(m.date)]}</b>${fmtISO(m.date)}</span>
           <span class="ev-main"><strong>${esc(m.fach || 'Stunde')}${m.klassen ? ' · ' + esc(m.klassen) : ''}</strong>
-            <small>${pLabel(m.from, m.to)} · ${m.fuer ? 'für ' + esc(m.fuer) : '<b class="ma-miss">Kürzel fehlt</b>'}${m.ber ? ' · Bereitschaft' : ''}${m.ort ? ' · ' + esc(m.ort) : ''}${maDone(m) ? '' : ' · geplant'}${m.quelle === 'hand' ? ' · nachgetragen' : ''}</small></span>
+            <small>${pLabel(m.from, m.to)} · ${m.fuer ? 'für ' + esc(m.fuer) : '<b class="ma-miss">Kürzel fehlt</b>'}${m.ber ? ' · Bereitschaft' : ''}${m.neben ? ' · <b>Nebenaufsicht – zählt nicht</b>' : ''}${m.ort ? ' · ' + esc(m.ort) : ''}${maDone(m) ? '' : ' · geplant'}${m.quelle === 'hand' ? ' · nachgetragen' : ''}</small></span>
           <span class="ev-right"><b>${maHours(m)}</b><small>Std.</small></span></button></div>`).join('')}</div>`
       : `<p class="empty-line">In diesem Monat keine Vertretungen${ym + '-01' < MA_START ? ' (gespeichert wird ab November 2026)' : ''}.</p>`;
     html += '</section>';
@@ -6378,5 +6388,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
 })();

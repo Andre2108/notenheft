@@ -1,6 +1,10 @@
-# Notenheft 7.4 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.4.1 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.4.1 – Nebenaufsichten
+
+- **Nebenaufsichten zählen nicht als Mehrarbeit:** Eine Untis-Stunde, die zeitgleich mit eigenem Unterricht liegt, der stattfindet (z. B. 2. Std. 7b, während Deutsch in der 6c läuft), oder ausdrücklich „Aufsicht“ heißt, wird als **Nebenaufsicht** markiert und nicht abgerechnet. Bereits gespeicherte Vertretungen werden einmal nachgeprüft; der Haken „zählt als Mehrarbeit“ lässt sich weiter von Hand setzen.
 
 ## Neu in Version 7.4 – Mehrarbeitsantrag per Mail, ruhiger Kopf
 
