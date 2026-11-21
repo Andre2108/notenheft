@@ -1,6 +1,17 @@
-# Notenheft 7.5 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.5.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.5.2 – echtes PDF, Suche bei Tests
+
+- **Elternsprechtag und Zeugniskonferenz als PDF:** In der Vorschau erzeugt „PDF – drucken oder sichern“ ein echtes A4-PDF; im Teilen-Menü des iPhones dann „Drucken“ oder „In Dateien sichern“. (In der iPhone-App tut der Druckbefehl selbst nichts, deshalb dort nur noch der PDF-Knopf.) Die PDF-Bausteine (jsPDF, html2canvas, MIT-Lizenz) liegen im Ordner vendor/.
+- **Sortieren: nur noch Nachname und Vorname.** Bei gleich beginnendem Nachnamen („H.“) entscheidet die Reihenfolge aus Kurs → Kinder (Verschieben per ☰).
+- **Arbeiten/Klausuren:** Kindersuche wie bei Mündlich, sie filtert auch die Testübersicht.
+- **Woche → Tagesliste** springt sofort zum heutigen Tag.
+
+## Neu in Version 7.5.1 – In OneDrive sichern
+
+- **Kurse → Sicherung → „Jetzt in OneDrive sichern“:** Der PC legt beim nächsten stündlichen Lauf die verschlüsselte Sicherung und die Excel-Datei mit Namen im richtigen OneDrive-Ordner ab (Notenheft-Sicherung → Schuljahr → Halbjahr → Kalenderwoche), wie bei der automatischen Sicherung montags und donnerstags. Der Reiter zeigt, wann und wohin zuletzt gesichert wurde.
 
 ## Neu in Version 7.5 – Sicherung, Kurse aufgeräumt
 

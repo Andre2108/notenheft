@@ -1805,3 +1805,4 @@ body.print-preview #print-root .pt th, body.print-preview #print-root .pt td { b
 body.ksearching .ch-kpis, body.ksearching .ck-strip, body.ksearching .sumbar.bold { display: none; }
 body.ksearching .main { padding-bottom: 70vh; }
 .kurse-seg { margin: 0 0 12px; }
+.ag-day[id] { scroll-margin-top: calc(var(--toph, 0px) + 10px); }

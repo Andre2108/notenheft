@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5';
+  const APP_VERSION = '7.5.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -221,7 +221,7 @@
     notenTab: 'erfassen',
     classId: null,
     weekStart: toISO(mondayOf(new Date())),
-    day: null, mode: 'liste', cardIdx: 0, onlyMissing: false, nameSort: 'liste', autoNext: true, kidQ: '', cardStay: null,
+    day: null, mode: 'liste', cardIdx: 0, onlyMissing: false, nameSort: 'nach', autoNext: true, kidQ: '', cardStay: null,
     ovRange: 'hj', ovFrom: null, ovTo: null, ovSort: 'name', ovTab: 'tabelle',
     detailStudent: null,
     courseId: null, courseTab: 'ueberblick',
@@ -297,16 +297,19 @@
   // Reihenfolge: wie in der Kürzel-Tabelle (pos = Zeile, nur eine Zahl, kein Name); Kinder ohne pos danach nach Nachname
   const byListPos = (a, b) => (a.pos > 0 ? 0 : 1) - (b.pos > 0 ? 0 : 1) || (a.pos > 0 && b.pos > 0 ? a.pos - b.pos : 0) || byLastName(a.name, b.name);
   const studentsOf = cid => live(S.data.students).filter(s => s.classId === cid).sort(byListPos);
-  // Beim Eintragen umschaltbar: Kursliste (Kürzel-Tabelle), Nachname oder Vorname – nur Anzeige, gilt je Gerät
-  const NAME_SORTS = [['liste', 'Liste'], ['nach', 'Nachname'], ['vor', 'Vorname']];
+  // Beim Eintragen umschaltbar: Nachname oder Vorname – nur Anzeige, gilt je Gerät.
+  // Bei gleichem (abgekürztem) Nachnamen entscheidet die Reihenfolge aus Kurs → Kinder (Verschieben bzw. Kürzel-Tabelle).
+  const NAME_SORTS = [['nach', 'Nachname'], ['vor', 'Vorname']];
   const firstKey = n => String(n || '').trim();
   function entryOrder(list) {
-    if (S.nameSort === 'nach') return list.slice().sort((a, b) => byLastName(a.name, b.name) || byListPos(a, b));
+    const ln = n => { const p = String(n || '').trim().split(/\s+/); return (p.length > 1 ? p[p.length - 1] : p[0] || '').replace(/\.$/, ''); };
     if (S.nameSort === 'vor') return list.slice().sort((a, b) => collator.compare(firstKey(a.name), firstKey(b.name)) || byListPos(a, b));
-    return list;
+    // Nachname: bei Abkürzungen („H.“) zählt nur, was dasteht – Gleichstand löst die Kursreihenfolge
+    return list.slice().sort((a, b) => { const x = ln(a.name), y = ln(b.name), k = Math.min(x.length, y.length);
+      return collator.compare(x.slice(0, k), y.slice(0, k)) || byListPos(a, b); });
   }
   const entryStudents = cid => entryOrder(studentsOf(cid));
-  const sortSeg = () => `<div class="seg sortseg" role="group" aria-label="Reihenfolge der Kinder"><span class="sortlbl">Sortieren</span>${NAME_SORTS.map(([k, l]) => `<button type="button" data-action="nameSort" data-k="${k}" class="${(S.nameSort || 'liste') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const sortSeg = () => `<div class="seg sortseg" role="group" aria-label="Reihenfolge der Kinder"><span class="sortlbl">Sortieren</span>${NAME_SORTS.map(([k, l]) => `<button type="button" data-action="nameSort" data-k="${k}" class="${(S.nameSort === 'vor' ? 'vor' : 'nach') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   // Kindersuche (mündliche Noten): passt, wenn jedes Suchwort am Anfang eines Namensteils steht
   const kidMatch = (s, q) => { const w = normName(s.name).split(' '); return normName(q).split(' ').filter(Boolean).every(t => w.some(x => x.startsWith(t))); };
   // Wo wird gerade eingetragen? Liefert die Kinder in Eintragereihenfolge und ob eine Karte (statt Liste) zu sehen ist.
@@ -318,6 +321,7 @@
       return { key: 't|' + a.id, students: entryStudents(a.classId), card: a.type === 'vokabel' && S.vMode !== 'liste', a };
     }
     if (S.courseTab === 'zeugnis') { const c = ensureClass(); return c && { key: 'z|' + c.id + '|' + S.zTab, students: entryStudents(c.id), card: false }; }
+    if (S.courseTab === 'tests' || S.courseTab === 'uebersicht') { const c = ensureClass(); return c && { key: S.courseTab + '|' + c.id, students: entryStudents(c.id), card: false }; }
     return null;
   }
   const kidSearchBox = (students, card) => `<div class="ksearch">${icon('search')}<input type="search" id="ksq" value="${esc(S.kidQ || '')}" placeholder="Kind suchen …" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" aria-label="Kind suchen">
@@ -1003,7 +1007,7 @@
       const u = JSON.parse(localStorage.getItem(LS_UI) || '{}');
       if (u.classId) S.classId = u.classId;
       if (u.mode) S.mode = u.mode;
-      if (['liste', 'nach', 'vor'].includes(u.nameSort)) S.nameSort = u.nameSort;
+      if (['nach', 'vor'].includes(u.nameSort)) S.nameSort = u.nameSort;
       if (u.autoNext === false) S.autoNext = false;
       if (u.view && ['start', 'heute', 'woche', 'termine', 'kurse', 'jahr', 'mehrarbeit', 'mehr', 'todos'].includes(u.view)) S.view = u.view;
       if (u.startMenu === false) S.startMenu = false;
@@ -2505,7 +2509,7 @@
       const free = freeReason(d);
       const ls = lessonsOn(d).filter(l => !l.away), fr = untisFremd(d);
       const evs = eventsOn(d).filter(e => (e.type !== 'ausfall' || !e.classId) && e.type !== 'tausch');
-      return `<div class="ag-day ${d === t ? 'today' : ''}">
+      return `<div class="ag-day ${d === t ? 'today' : ''}" ${d === t ? 'id="ag-heute"' : ''}>
         <button type="button" class="ag-head" data-action="dayGo" data-date="${d}"><b>${WD_LONG[i]}</b><span>${fmtISO(d)}</span>${d === t ? '<span class="pill now" style="--cc:var(--accent)">heute</span>' : ''}</button>
         ${free ? `<div class="ag-free">${icon('sun')} ${esc(free)}</div>` : ''}
         ${evs.map(e => `<button type="button" class="ag-row ev" data-action="editEvent" data-eid="${e.id}">${picto(e.type, 'sm')}<span><b>${esc(evTitle(e))}</b> ${e.classId ? esc(clsLabel(S.data.classes[e.classId])) : ''}${e.note ? ` – ${esc(e.note)}` : ''}</span></button>`).join('')}
@@ -3204,7 +3208,7 @@
     const c = ensureClass();
     if (!c) return emptyState('Noch kein Kurs angelegt', '', `<button type="button" class="btn primary" data-action="newClass">${icon('plus')} Kurs anlegen</button>`);
     if (S.assessId) { const a = S.data.assessments[S.assessId]; if (a && !a.deleted && a.classId === c.id) return viewAssessment(a); S.assessId = null; }
-    const students = studentsOf(c.id);
+    const students = entryStudents(c.id);
     const linked = new Set(live(S.data.assessments).map(a => a.eventId).filter(Boolean));
     const exams = live(S.data.events).filter(e => e.type === 'pruefung' && e.classId === c.id && !linked.has(e.id) && e.date <= todayISO())
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -3218,7 +3222,7 @@
         <span class="res-chip ${valCls(avg)}">Ø ${avg != null ? fmtNum(avg, 2) : '–'}</span>${icon('right')}</button>
         <button type="button" class="icon-btn plain as-del" data-action="deleteAssess" data-aid="${a.id}" aria-label="${esc(a.title)} löschen" title="Löschen">${icon('trash')}</button></div>`;
     };
-    return `<div class="toolbar">${classSelect()}</div>${kmPendingPanel(c)}
+    return `<div class="toolbar">${classSelect()}</div>${students.length ? kidBar(students, false) : ''}${kmPendingPanel(c)}
       <section class="section"><div class="section-head"><h2>Schriftliche Leistungen</h2><span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="schriftlich">${icon('plus')} Arbeit</button><button type="button" class="link" data-action="newAssess" data-type="schriftlich" data-art="muendlich">${icon('plus')} Mündliche Prüfung</button></span></div>
         <p class="muted small pad">Klassenarbeiten bzw. Klausuren und mündliche Prüfungen – zählen 50 % der Zeugnisnote. Gewichtung je Arbeit über den Stift in der Arbeit.</p>
         ${exams.length ? `<div class="mini-list">${exams.map(e => `<button type="button" class="mini-row" data-action="assessFromEvent" data-eid="${e.id}" ${ccStyle(c)}><span class="dot"></span><span class="mini-date">${fmtShort(e.date)}</span><span class="mini-text"><strong>${esc(e.kind || 'Prüfung')}</strong> aus der Planung – Noten eintragen</span>${icon('right')}</button>`).join('')}</div>` : ''}
@@ -3240,7 +3244,7 @@
         const rs = vok.map(a => resultOf(a.id, s.id)), ra = vok.map(a => [a, resultOf(a.id, s.id)]);
         const vals = rs.filter(r => r && r.value != null).map(r => r.value);
         const avg = mean(vals);
-        return `<tr data-action="studentDetail" data-sid="${s.id}" tabindex="0"><td>${esc(s.name)}</td>${ra.map(([a, r]) => `<td>${!r ? '' : r.value == null ? '<span class="mcell f">f</span>' : `<span class="mcell ${valCls(r.value)}" title="${esc(testPts(a, r))}">${esc(r.label)}</span>`}</td>`).join('')}
+        return `<tr data-action="studentDetail" data-sid="${s.id}" data-kid="${s.id}" tabindex="0"><td>${esc(s.name)}</td>${ra.map(([a, r]) => `<td>${!r ? '' : r.value == null ? '<span class="mcell f">f</span>' : `<span class="mcell ${valCls(r.value)}" title="${esc(testPts(a, r))}">${esc(r.label)}</span>`}</td>`).join('')}
           <td>${avg != null ? `<span class="mcell ${valCls(avg)}">${fmtNum(avg, 1)}</span>` : ''}</td></tr>`;
       }).join('')}</tbody></table></div>`;
   }
@@ -4296,8 +4300,9 @@
     let root = $('#print-root');
     if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
     root.innerHTML = `<div class="print-doc"><header><img src="icons/icon.svg" alt="" width="28" height="28"><div><h1>${esc(title)}</h1><p>Stand: ${fmtISO(todayISO(), true)} · vertraulich – nach Gebrauch vernichten</p></div></header>${html}</div>`;
-    root.insertAdjacentHTML('beforeend', `<div class="print-bar"><button type="button" class="btn primary" data-pa="print">${icon('print')} Drucken</button>
-      <button type="button" class="btn" data-pa="share">${icon('upload')} Teilen / PDF</button><button type="button" class="btn" data-pa="close">Schließen</button></div>`);
+    const iosApp = isIOS() && isStandalone(); // dort tut window.print() nichts – Drucken geht über das PDF
+    root.insertAdjacentHTML('beforeend', `<div class="print-bar">${iosApp ? '' : `<button type="button" class="btn" data-pa="print">${icon('print')} Drucken</button>`}
+      <button type="button" class="btn primary" data-pa="share">${icon('upload')} ${iosApp ? 'PDF – drucken oder sichern' : 'Als PDF speichern'}</button><button type="button" class="btn" data-pa="close">Schließen</button></div>`);
     root.dataset.title = title;
     document.body.classList.add('print-preview');
     root.scrollTop = 0;
@@ -4307,18 +4312,37 @@
         const b = e.target.closest('[data-pa]'); if (!b) return;
         if (b.dataset.pa === 'close') return printClose();
         if (b.dataset.pa === 'print') { document.body.classList.add('printing'); setTimeout(() => window.print(), 60); return; }
-        // Teilen: eigenständige HTML-Datei (in Safari öffnen → Drucken bzw. als PDF sichern)
-        const css = [...document.styleSheets].map(sh => { try { return [...sh.cssRules].map(r => r.cssText).join('\n'); } catch { return ''; } }).join('\n');
-        const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(root.dataset.title)}</title><style>${css}
-          body{background:#fff;color:#111;margin:16px} .print-bar{display:none!important}</style></head><body class="printing print-file"><div id="print-root">${root.querySelector('.print-doc').outerHTML}</div></body></html>`;
-        const name = `${root.dataset.title}.html`.replace(/[\\/:*?"<>|]/g, '-');
-        const file = new File([html], name, { type: 'text/html' });
+        b.disabled = true; const alt = b.innerHTML; b.textContent = 'PDF wird erstellt …';
         try {
-          if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: root.dataset.title });
-          else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-        } catch (err) { if (err?.name !== 'AbortError') toast('Teilen hat nicht geklappt: ' + err.message, { error: true }); }
+          const pdf = await pdfAus(root.querySelector('.print-doc'));
+          const name = `${root.dataset.title} ${todayISO()}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
+          await saveFile(name, pdf);
+        } catch (err) { if (err?.name !== 'AbortError') toast('PDF hat nicht geklappt: ' + err.message, { error: true, ms: 7000 }); }
+        finally { b.disabled = false; b.innerHTML = alt; }
       });
     }
+  }
+  const ladeSkript = src => new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error('Programmteil nicht ladbar (offline?)')); document.head.appendChild(sc); });
+  async function pdfAus(el) { // A4-PDF aus dem Druckblatt: Bild je Seite, Seitenumbruch zwischen Zeilen/Abschnitten
+    await ladeSkript('vendor/html2canvas.min.js'); await ladeSkript('vendor/jspdf.umd.min.js');
+    const W = 760, box = el.getBoundingClientRect(), f = W / box.width;
+    const canvas = await window.html2canvas(el, { scale: 2 * f, backgroundColor: '#ffffff', useCORS: true, logging: false, ignoreElements: x => x.tagName === 'IMG' });
+    const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const mmW = 186, pxPerMm = canvas.width / mmW, pageMm = 271, pagePx = pageMm * pxPerMm;
+    const k = canvas.width / box.width; // Canvas-Pixel je CSS-Pixel
+    const cuts = [...el.querySelectorAll('tr, h2, p, li, .pd-chart, header, .pd-lines, table')].map(x => (x.getBoundingClientRect().bottom - box.top) * k).filter(y => y > 0).sort((a, b) => a - b);
+    let y = 0, first = true;
+    while (y < canvas.height - 2) {
+      let end = Math.min(canvas.height, y + pagePx);
+      if (end < canvas.height) { const c = cuts.filter(v => v > y + pagePx * 0.5 && v <= end).pop(); if (c) end = c; }
+      const h = end - y, part = document.createElement('canvas');
+      part.width = canvas.width; part.height = Math.ceil(h);
+      const ctx = part.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, part.width, part.height); ctx.drawImage(canvas, 0, -y);
+      if (!first) doc.addPage();
+      doc.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 12, 12, mmW, h / pxPerMm);
+      first = false; y = end;
+    }
+    return doc.output('blob');
   }
   function printClose() { document.body.classList.remove('print-preview', 'printing'); const r = $('#print-root'); if (r) r.innerHTML = ''; }
   window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); });
@@ -4410,6 +4434,15 @@
     if (!cs.length) return html + emptyState('Noch keine Kurse', 'Importiere die Ganzjahresplanung (Reiter „Jahr“) oder lege Kurse von Hand an. Die Namen der Kinder kannst du direkt aus Excel einfügen.', `<button type="button" class="btn primary" data-action="newClass">${icon('plus')} Kurs anlegen</button>`);
     html += `<div class="seg full kurse-seg"><button type="button" data-action="kurseTab" data-t="kurse" class="${S.kurseTab !== 'sicherung' ? 'on' : ''}">${icon('users')} Kurse</button><button type="button" data-action="kurseTab" data-t="sicherung" class="${S.kurseTab === 'sicherung' ? 'on' : ''}">${icon('save')} Sicherung</button></div>`;
     if (S.kurseTab === 'sicherung') return html + `<section class="panel">
+        <h2>${icon('cloud')} In OneDrive sichern</h2>
+        <p class="muted small">Wie die automatische Sicherung am PC (montags und donnerstags): verschlüsselte Sicherung und Excel-Datei mit Namen in <b>Klausuren &amp; Noten → Notenheft-Sicherung → Schuljahr → Halbjahr → Kalenderwoche</b>. Auf Knopfdruck erledigt das der PC beim nächsten stündlichen Lauf – er muss dafür an sein.</p>
+        ${(() => { const x = S.pcSich, a = S.device.sichAnfrage;
+          const letzte = x ? `<p class="ok-t small">${icon('check')} Letzte Sicherung: ${fmtShort(x.zeit.slice(0, 10))} ${x.zeit.slice(11, 16)} Uhr · ${esc(x.ordner.replace(/\\/g, ' › '))}${x.excel ? ' · mit Excel' : ` · <b>${esc(x.info || 'ohne Excel')}</b>`}</p>` : ghReady() ? '<p class="muted small">Letzte Sicherung wird geladen …</p>' : '';
+          const wartet = a && (!x || new Date(x.zeit).getTime() < a) ? `<p class="warn-t small">Angefordert ${fmtDate(new Date(a))} ${new Date(a).toTimeString().slice(0, 5)} Uhr – der PC sichert beim nächsten Lauf.</p>` : '';
+          return letzte + wartet; })()}
+        <button type="button" class="btn primary" data-action="onedriveSichern" ${ghReady() ? '' : 'disabled'}>${icon('cloud')} Jetzt in OneDrive sichern</button>
+        ${ghReady() ? '' : '<p class="muted small">Dafür muss die Synchronisierung über GitHub eingerichtet sein.</p>'}</section>
+      <section class="panel">
         <h2>${icon('sheet')} Noten als Excel</h2>
         <p class="muted small">Eine Datei mit einem Blatt „Übersicht“ und je Kurs einem Blatt: Namen, Ø mündlich mit Tendenz, SoMi, schriftlich, Vorschlag und Zeugnisnote je Halbjahr, alle Arbeiten und Tests sowie die mündlichen Noten je Woche. Die Datei entsteht nur auf diesem Gerät und enthält Klarnamen – sicher aufbewahren.</p>
         <button type="button" class="btn primary" data-action="notenExcel">${icon('download')} Excel-Datei speichern</button></section>
@@ -4524,7 +4557,6 @@
       const ids = [...ul.children].map(x => x.dataset.sid);
       if (ids.every((sid, i) => S.data.students[sid]?.pos === i + 1)) return;
       commit(d => ids.forEach((sid, i) => { const st = d.students[sid]; if (st && st.pos !== i + 1) d.students[sid] = Object.assign({}, st, { pos: i + 1, updatedAt: now() }); }));
-      S.nameSort = 'liste'; saveUI();
       toast('Reihenfolge gespeichert');
     };
     document.addEventListener('pointerup', end);
@@ -4535,7 +4567,7 @@
     const others = classesSorted().filter(o => o.id !== c.id && studentsOf(o.id).length);
     return `<section class="panel">
         <h3>${plural(sts.length, 'Kind', 'Kinder')}</h3>
-        ${sts.length > 1 ? '<p class="muted small">Reihenfolge ändern: Kind am Griff ☰ festhalten und verschieben. Sie gilt für „Sortieren: Liste“.</p>' : ''}
+        ${sts.length > 1 ? '<p class="muted small">Reihenfolge wie in der echten Klassenliste: Kind am Griff ☰ festhalten und verschieben. Beim Sortieren nach Nachname entscheidet sie, wenn Nachnamen gleich anfangen (z. B. „H.“ für Halde und Hilde).</p>' : ''}
         ${sts.length ? `<ul class="stud-list" data-dnd="${c.id}">${sts.map(s => `<li data-sid="${s.id}"><span class="drag-h" aria-label="Verschieben" title="Verschieben">☰</span><span>${esc(s.name)} <small class="muted">${esc(s.km || s.code || '')}</small></span>
           <button type="button" class="icon-btn plain" data-action="renameStudent" data-sid="${s.id}" aria-label="${esc(s.name)} umbenennen">${icon('pencil')}</button>
           <button type="button" class="icon-btn plain" data-action="deleteStudent" data-sid="${s.id}" aria-label="${esc(s.name)} entfernen">${icon('trash')}</button></li>`).join('')}</ul>` : '<p class="muted small">Noch keine Kinder eingetragen.</p>'}
@@ -5763,6 +5795,11 @@
       commit(d => { d.todos[id] = { id, auto: 'sichern', cat: 'sonst', text: `Alle Noten sichern (Zeugnis ${key === 'HJ1' ? '1.' : '2.'} Halbjahr)`, note: 'Antippen: Excel-Übersicht und verschlüsselte Sicherung speichern', classId: null, date: t, done: false, createdAt: now(), updatedAt: now() }; }, { sync: true });
     }
   }
+  async function pcSichLaden() { // Rückmeldung des PCs: wann und wohin zuletzt gesichert wurde
+    if (!ghReady()) return;
+    try { const f = await GH.getText(S.device.gh, 'pc/sicherung.json'); if (f) { S.pcSich = JSON.parse(f.text); if (S.view === 'kurse' && S.kurseTab === 'sicherung') render(); } }
+    catch (e) { console.warn('Sicherungsstand:', e); }
+  }
   async function backupDownload() {
     const blob = await Vault.encrypt({ data: S.data, names: S.device.names || {} });
     saveFile(`Notenheft_Sicherung_${todayISO()}.json`, new Blob([JSON.stringify(blob)], { type: 'application/json' }));
@@ -6176,7 +6213,7 @@
       const c = classesSorted().find(cc => warnInfo(cc).some(w => w.drift && !w.warned && (w.was4 || !w.was56))) || classesSorted().find(cc => warnInfo(cc).some(w => w.was4)) || classesSorted()[0];
       S.view = 'kurse'; S.courseId = c?.id || null; S.classId = S.courseId; S.courseTab = 'zeugnis'; S.zTab = 'warn'; S.assessId = null; S.detailStudent = null; render(); window.scrollTo(0, 0);
     },
-    weekMode(d) { S.weekMode = d.m; render(); },
+    weekMode(d) { S.weekMode = d.m; render(); if (d.m === 'list') setTimeout(() => document.getElementById('ag-heute')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); },
     tFilter(d) { S.tFilter = d.f; render(); },
     jRange(d) { S.jRange = d.r; render(); },
     jCourse(d) { S.jCourse = d.cid; render(); },
@@ -6386,7 +6423,16 @@
     changePassword() { changePassword(); },
     backupDownload() { backupDownload(); },
     notenExcel() { notenExcel(); },
-    kurseTab(d) { S.kurseTab = d.t; render(); },
+    kurseTab(d) { S.kurseTab = d.t; render(); if (d.t === 'sicherung') pcSichLaden(); },
+    async onedriveSichern() {
+      if (!ghReady()) return;
+      try {
+        S.device.pcNotenLast = null; await pcExport(); // aktuelle Noten für die Excel-Datei
+        await GH.putText(S.device.gh, 'ausgang/sicherung-anfrage.json', JSON.stringify({ stand: new Date().toISOString() }), 'Notenheft: Sicherung im OneDrive angefordert');
+        S.device.sichAnfrage = now(); persistLocal(); render();
+        toast('Angefordert – der PC sichert beim nächsten stündlichen Lauf in OneDrive.', { ms: 6000 });
+      } catch (e) { toast('Anfordern hat nicht geklappt: ' + e.message, { error: true, ms: 7000 }); }
+    },
     async removeGh() {
       if (!await confirmDialog('Verbindung trennen', 'Dieses Gerät synchronisiert dann nicht mehr. Die Daten in GitHub bleiben erhalten. Tipp: Das Token auf github.com widerrufen, wenn du es nicht mehr brauchst.', 'Trennen')) return;
       S.device.gh = null; S.sync.state = 'idle'; S.sync.repoOk = false;
