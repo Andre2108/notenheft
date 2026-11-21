@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.4.1';
+  const APP_VERSION = '7.4.2';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -4561,7 +4561,16 @@
     const plus = sum(ma.filter(m => m.zaehlt !== false).map(maHours)), minus = sum(aus.filter(r => ausGrund(r.ev) === 'ersatzlos').map(r => r.hours));
     return { from, to, ma, aus, regAus, plus, minus, saldo: plus - minus, offen: ma.filter(m => m.zaehlt !== false && !maDone(m)).length, ohneKuerzel: ma.filter(m => m.zaehlt !== false && !m.fuer).length };
   }
-  const ausGrund = e => e.grund || (e.ersatzlos ? 'ersatzlos' : ''); // '' | 'ersatzlos' | 'krank'
+  const ausGrund = e => e.grund || (e.ersatzlos ? 'ersatzlos' : ''); // '' | 'dienstlich' | 'ersatzlos' | 'krank'
+  const ausUntis = e => !!e.untis || String(e.id).startsWith('untis-');
+  const ausOffen = e => ausUntis(e) && !ausGrund(e) && !e.terminId; // Entfall laut WebUntis, noch nicht entschieden
+  const AUS_G = [['dienstlich', 'dienstlich'], ['ersatzlos', 'ersatzlos'], ['krank', 'krank']];
+  function ausWahl(r) { // drei Knöpfe + was die Wahl bewirkt
+    const g = ausGrund(r.ev), offen = ausOffen(r.ev);
+    const wirkung = g === 'ersatzlos' ? `steht im Antrag: −${r.hours} Std.` : offen ? 'noch offen – zählt bis dahin als dienstlich (Iststunde, nicht im Antrag)' : 'zählt als Iststunde · nicht im Antrag';
+    return `<div class="aus-wahl"><div class="seg aus-seg">${AUS_G.map(([k, l]) => `<button type="button" data-action="maGrundSet" data-eid="${esc(r.ev.id)}" data-g="${k}" class="${k === g || (k === 'dienstlich' && !g && !offen) ? 'on ' + k : ''}">${l}</button>`).join('')}</div>
+      <small class="aus-wirk ${g === 'ersatzlos' ? 'minus' : offen ? 'offen' : ''}">${wirkung}</small></div>`;
+  }
   const maAlt = () => { const sy = termCfg().start; return maList().filter(m => m.date < sy); };
   function maText(ym) {
     const st = maMonthStats(ym);
@@ -4609,13 +4618,14 @@
     html += '</section>';
     // Ausfälle
     html += `<section class="section"><div class="section-head"><h2>${picto('ausfall', 'sm')} Ausgefallene Stunden</h2><button type="button" class="link" data-action="maKrank">${icon('plus')} Krank …</button></div>
-      <p class="muted small ma-note">Nur „ersatzlos, ohne Schulgeschäft“ wird gegengerechnet – Ausfälle wegen Krankheit nie.</p>`;
-    const GRUENDE = [['', 'nicht verrechnen'], ['ersatzlos', 'ersatzlos, ohne Schulgeschäft – verrechnen'], ['krank', 'krank – nicht verrechnen']];
-    html += st.aus.length ? `<div class="ev-list">${st.aus.map(r => { const g = ausGrund(r.ev); return `<div class="ma-row aus ${g === 'ersatzlos' ? '' : 'off'}">
+      <p class="muted small ma-note"><b>dienstlich</b> (Klassenfahrt, Konferenz …) und <b>krank</b> zählen als Iststunde und stehen nicht im Antrag. Nur <b>ersatzlos</b> (echter Ausfall ohne anderes Dienstgeschäft) steht in der Spalte „ausgefallene Stunde“ und wird abgezogen.</p>`;
+    const nOffen = st.aus.filter(r => ausOffen(r.ev)).length;
+    if (nOffen) html += `<div class="ma-hint">${icon('info')}<span>${plural(nOffen, 'Ausfall', 'Ausfälle')} laut WebUntis noch nicht entschieden – erwähnen (ersatzlos) oder nicht?</span></div>`;
+    html += st.aus.length ? `<div class="ev-list">${st.aus.map(r => { const g = ausGrund(r.ev); return `<div class="ma-row aus ${g === 'ersatzlos' ? '' : 'off'} ${ausOffen(r.ev) ? 'offen' : ''}">
         <span class="ma-main"><span class="ev-date"><b>${WD[wdOf(r.date)]}</b>${fmtISO(r.date)}</span>
-          <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${esc(r.ev.note || 'Ausfall')}</small>
-            <select class="ma-grund ${g}" data-change="maGrund" data-eid="${esc(r.ev.id)}">${GRUENDE.map(([v, lab]) => `<option value="${v}" ${v === g ? 'selected' : ''}>${lab}</option>`).join('')}</select></span>
-          <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>${g === 'ersatzlos' ? 'Std.' : 'Std. · zählt nicht'}</small></span></span></div>`; }).join('')}</div>`
+          <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${ausUntis(r.ev) ? 'laut WebUntis' : esc(r.ev.note || 'Ausfall')}</small></span>
+          <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>${g === 'ersatzlos' ? 'Std.' : 'Std. · zählt nicht'}</small></span>
+          ${ausWahl(r)}</span></div>`; }).join('')}</div>`
       : st.regAus.length ? '' : '<p class="empty-line">Keine ausgefallenen Stunden in diesem Monat.</p>';
     if (st.regAus.length) html += `<div class="ev-list">${st.regAus.map(r => `<div class="ma-row aus off"><span class="ma-main"><span class="ev-date"><b>${WD[wdOf(r.date)]}</b>${fmtISO(r.date)}</span>
         <span class="ev-main"><strong>${esc(r.fach)}</strong><small>${pLabel(r.from, r.to)} · entfällt laut WebUntis – dienstlich, zählt als Iststunde</small></span>
@@ -4714,13 +4724,11 @@
       zeilen.push({ iso: m.date, from: m.from, datum: ddmmyy(m.date), klasse: m.klassen || '-', zusatz: fachLang(m.fach) + (h > 1 ? ` (${h} Stunden)` : ''), aus: '', grund: 'Abwesenheit Fachlehrkraft' });
     }
     const note = (e, alt) => e.note && !/webuntis/i.test(e.note) ? e.note : alt;
-    for (const r of st.regAus) zeilen.push({ iso: r.date, from: r.from, datum: ddmmyy(r.date), klasse: r.fach, zusatz: '', aus: '', grund: 'Ausfall aus dienstlichen Gründen (anrechenbar)' });
     for (const r of st.aus) {
       const g = ausGrund(r.ev);
       if (g === 'krank') continue; // Krankheitstage stehen nicht in der Tabelle
       const kl = [...new Set(r.ls.map(l => l.cls.name))].join(', '), from = r.ls[0]?.from || 0;
-      if (g === 'ersatzlos') zeilen.push({ iso: r.date, from, datum: ddmmyy(r.date), klasse: kl, zusatz: '', aus: String(r.hours), grund: note(r.ev, 'Unterrichtsausfall') });
-      else zeilen.push({ iso: r.date, from, datum: ddmmyy(r.date), klasse: kl, zusatz: '', aus: '', grund: note(r.ev, 'Ausfall') + ' (anrechenbar)' });
+      if (g === 'ersatzlos') zeilen.push({ iso: r.date, from, datum: ddmmyy(r.date), klasse: kl, zusatz: '', aus: String(r.hours), grund: note(r.ev, 'Unterrichtsausfall') }); // nur echte Ausfälle stehen in der Tabelle
     }
     zeilen.sort((a, b) => a.iso.localeCompare(b.iso) || a.from - b.from);
     const t = todayISO();
@@ -4744,13 +4752,20 @@
     if (!ghReady()) return toast('Dafür muss die Synchronisierung über GitHub eingerichtet sein.', { error: true });
     const a = maAntragDaten(ym), td = S.data.todos['ma-antrag-' + ym];
     const mehr = a.summe.ist - a.summe.soll;
+    const offen = maMonthStats(ym).aus.filter(r => ausOffen(r.ev));
     const r = await openModal({ title: `Mehrarbeitsantrag ${a.monat}`,
-      body: `${td?.gesendet ? `<div class="ma-hint">${icon('check')}<span>Schon am ${fmtISO(td.gesendet.slice(0, 10), true)} verschickt. Du kannst ihn erneut schicken.</span></div>` : ''}
+      mount: (root, close) => root.addEventListener('click', e => {
+        const b = e.target.closest('[data-action="maGrundSet"]'); if (!b) return;
+        e.stopPropagation(); e.preventDefault(); A.maGrundSet(b.dataset); close('neu');
+      }, true),
+      body: `${offen.length ? `<div class="aus-offen"><b>${plural(offen.length, 'Ausfall', 'Ausfälle')} laut WebUntis noch offen – erwähnen?</b>${offen.map(r => `<div class="aus-offen-row"><span>${WD[wdOf(r.date)]} ${fmtISO(r.date)} · ${r.ls.map(l => esc(l.cls.name)).join(', ')} · ${r.ls.map(l => pLabel(l.from, l.to)).join(', ')}</span>${ausWahl(r)}</div>`).join('')}</div>` : ''}
+        ${td?.gesendet ? `<div class="ma-hint">${icon('check')}<span>Schon am ${fmtISO(td.gesendet.slice(0, 10), true)} verschickt. Du kannst ihn erneut schicken.</span></div>` : ''}
         ${glance([{ value: String(a.summe.soll), label: 'Sollstunden', tone: 'less' }, { value: String(a.summe.ist), label: 'Iststunden', tone: 'term' }, { value: String(mehr), label: 'Mehrarbeit', tone: mehr >= MA_SCHWELLE ? 'tdo' : 'tdo zero' }], true)}
         ${a.offen ? `<p class="muted small">${plural(a.offen, 'Stunde ist', 'Stunden sind')} noch nicht gehalten und schon mitgezählt.</p>` : ''}
         ${mehr < MA_SCHWELLE ? `<p class="muted small">Unter ${MA_SCHWELLE} Stunden – ein Antrag lohnt sich in der Regel nicht.</p>` : ''}
         <p class="muted small">Das ausgefüllte Formular (Word und PDF, Datum von heute, „nein“ angekreuzt, ${plural(a.zeilen.length, 'Zeile', 'Zeilen')} in der Tabelle) kommt in etwa 2–3 Minuten an deine Schuladresse.</p>`,
       actions: [{ label: 'Abbrechen', value: null }, { label: td?.gesendet ? 'Erneut senden' : 'Per Mail senden', cls: 'primary', value: true }] });
+    if (r === 'neu') return maAntrag(ym);
     if (!r) return;
     try {
       await GH.putText(S.device.gh, 'mehrarbeit/auftrag.json', JSON.stringify(a, null, 1), `Notenheft: Mehrarbeitsantrag ${a.monat}`);
@@ -4998,7 +5013,7 @@
     if (ev.time) rows.push(['Uhrzeit', `${esc(ev.time)}${ev.timeEnd ? '–' + esc(ev.timeEnd) : ''} Uhr`]);
     if (ev.from != null) rows.push(['Stunden', pLabel(ev.from, ev.to ?? ev.from)]);
     if (ev.type === 'pruefung' && ev.date >= t && ev.classId) { const inf = examInfo(ev); if (inf.lessons != null) rows.push(['bis dahin', plural(inf.lessons, 'Unterrichtsstunde', 'Unterrichtsstunden')]); }
-    if (ev.type === 'ausfall' && ev.grund) rows.push(['verrechnen', ev.grund === 'ersatzlos' ? 'ersatzlos – wird mit Mehrarbeit verrechnet' : 'krank – nicht verrechnet']);
+    if (ev.type === 'ausfall' && (ev.grund || ausOffen(ev))) rows.push(['Mehrarbeit', ev.grund === 'ersatzlos' ? 'ersatzlos – steht im Antrag, wird abgezogen' : ev.grund === 'krank' ? 'krank – zählt als Iststunde' : ev.grund === 'dienstlich' ? 'dienstlich – zählt als Iststunde' : 'noch offen (Plan → Mehrarbeit)']);
     const linked = live(S.data.events).filter(x => x.type === 'ausfall' && x.terminId === ev.id);
     if (linked.length) rows.push(['fällt aus', linked.map(x => esc(clsLabel(S.data.classes[x.classId]))).join(', ')]);
     if (ev.note) rows.push([ev.type === 'ausfall' ? 'Grund' : ev.type === 'pruefung' ? 'Themen' : 'Notiz', esc(ev.note).replace(/\n/g, '<br>')]);
@@ -5865,6 +5880,7 @@
     todoEdit(d) { const x = S.data.todos[d.id], e = x?.eid && S.data.events[x.eid];
       if (x && x.auto === 'mehrarbeit') maAntrag(x.ym); else if (x && x.auto === 'pruefnoten' && e && !e.deleted) examNoten(e); else if (x) todoDialog(x); },
     maAntrag(d) { maAntrag(d.ym); },
+    maGrundSet(d) { const id = d.eid; commit(x => { const e = x.events[id]; if (e) x.events[id] = Object.assign({}, e, { grund: d.g, ersatzlos: d.g === 'ersatzlos', updatedAt: now() }); }); },
     newTodo(d) { todoDialog(null, { cid: d.cid || '', ...(d.date !== undefined ? { date: d.date } : {}) }); },
     todoFilter(d) { S.todoFilter = d.f || ''; render(); },
     todoFilterGo(d) { S.todoFilter = d.f || ''; S.view = 'todos'; saveUI(); render(); window.scrollTo(0, 0); },
@@ -6388,5 +6404,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, ausOffen, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
 })();

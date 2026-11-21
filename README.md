@@ -1,6 +1,13 @@
-# Notenheft 7.4.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.4.2 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.4.2 – Ausfälle deutlicher entscheiden
+
+- **Drei Knöpfe je Ausfall** (Plan → Mehrarbeit): **dienstlich** · **ersatzlos** · **krank**, darunter die Wirkung („steht im Antrag: −2 Std.“ bzw. „zählt als Iststunde · nicht im Antrag“).
+- **Neue Entfälle laut WebUntis sind „noch offen“** (orange markiert, Hinweis oben) und zählen bis zur Entscheidung als dienstlich.
+- **Antragsfenster:** Offene Ausfälle stehen dort mit denselben Knöpfen und lassen sich direkt entscheiden.
+- **Antrag:** In der Tabelle stehen nur noch Vertretungen und ersatzlose Ausfälle (mit Stundenzahl unter „ausgefallene Stunde“); dienstliche Ausfälle, Krankheit und LW nicht.
 
 ## Neu in Version 7.4.1 – Nebenaufsichten
 
