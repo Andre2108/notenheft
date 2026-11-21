@@ -1806,3 +1806,6 @@ body.ksearching .ch-kpis, body.ksearching .ck-strip, body.ksearching .sumbar.bol
 body.ksearching .main { padding-bottom: 70vh; }
 .kurse-seg { margin: 0 0 12px; }
 .ag-day[id] { scroll-margin-top: calc(var(--toph, 0px) + 10px); }
+/* Knöpfe im dunklen Kopfbalken (z. B. Tage blättern in „Heute“, Monate in „Mehrarbeit“): dunkel statt weiß, Pfeil sichtbar */
+.main > .page-head:first-child .icon-btn, .main > .start-head:first-child .icon-btn { background: var(--head-2); border-color: var(--head-line); color: var(--head-text); }
+.main > .page-head:first-child .icon-btn:disabled { opacity: .4; }

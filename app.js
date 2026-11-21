@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.2';
+  const APP_VERSION = '7.5.3';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -815,6 +815,7 @@
   // Gewichtung einer Arbeit (Standard 1); mündliche Prüfungen zählen zum schriftlichen Teil
   const weightOf = a => (a && a.weight > 0 ? a.weight : 1);
   const artLabel = a => a.type === 'vokabel' ? 'Vokabeltest' : a.art === 'muendlich' ? 'Mündliche Prüfung' : 'schriftlich';
+  const VOK_ANTEIL = 0.15; // Anteil der Vokabeltests/Tests an der SoMi-Note
   function calcRaw(s, c, from, to) {
     const inR = d => d >= from && d <= to;
     const ment = liveEntries().filter(e => e.studentId === s.id && e.kind === 'note' && e.grade && inR(e.date));
@@ -827,9 +828,11 @@
       if (!r || r.value == null) continue;
       if (a.type === 'vokabel') vok.push(r.value); else schr.push([r.value, weightOf(a)]);
     }
-    const somiItems = mUnits.concat(vok);
+    // SoMi: Tests zählen bei allen Kindern fest VOK_ANTEIL (15 %), mündlich den Rest – gibt es nur eins von beiden, zählt das allein
+    const mA = mean(mUnits), vA = mean(vok);
+    const somi = mA != null && vA != null ? (1 - VOK_ANTEIL) * mA + VOK_ANTEIL * vA : (mA ?? vA);
     const wSum = sum(schr.map(x => x[1]));
-    return { mCount: mUnits.length, mAvg: mean(mUnits), vCount: vok.length, vAvg: mean(vok), somi: mean(somiItems), schr: wSum ? sum(schr.map(x => x[0] * x[1])) / wSum : null, sCount: schr.length, weighted: schr.some(x => x[1] !== 1) };
+    return { mCount: mUnits.length, mAvg: mA, vCount: vok.length, vAvg: vA, somi, schr: wSum ? sum(schr.map(x => x[0] * x[1])) / wSum : null, sCount: schr.length, weighted: schr.some(x => x[1] !== 1) };
   }
   // Oberstufe: von Hand eingetragene SoMi-Quartalsnote (liegt in overrides, Schlüssel …|<Jahr>-Q1-somi)
   const somiQKey = (c, s, qKey) => `${c.id}|${s.id}|${termCfg().sy}-${qKey}-somi`;
@@ -849,7 +852,7 @@
       if (q) { r.somiCalc = r.somi; r.somi = q.value; r.somiSet = true; }
     }
     r.total = r.somi != null && r.schr != null ? (r.somi + r.schr) / 2 : (r.somi ?? r.schr);
-    r.vShare = (r.mCount + r.vCount) ? r.vCount / (r.mCount + r.vCount) : 0;
+    r.vShare = r.vCount ? (r.mCount ? VOK_ANTEIL : 1) : 0;
     r.suggest = snap(c, r.total);
     const key = `${c.id}|${s.id}|${termCfg().sy}-${term.key}`;
     const ov = S.data.overrides[key];
@@ -3233,7 +3236,7 @@
       <section class="section"><div class="section-head"><h2>Tests</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Test – irregular verbs</button></span>` : ''}</div>
         ${c.vocab ? (vok.length ? `<div class="as-list">${vok.map(row).join('')}</div>${vocabMatrix(c, vok, students)}`
           : '<p class="muted small pad">Noch keine Tests. Vokabeltest: max. 10 Punkte, halbe Punkte möglich. Test – irregular verbs: Zahl der richtigen Lücken (von 30) antippen. Die Note wird jeweils automatisch berechnet.</p>')
-          : `<div class="panel slim"><p class="muted small">Vokabeltests und Tests – irregular verbs sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
+          : `<div class="panel slim"><p class="muted small">Vokabeltests und Tests – irregular verbs sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie 15 % der SoMi-Note.</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
       </section>`;
   }
   function vocabMatrix(c, vok, students) {
@@ -4138,7 +4141,7 @@
     const students = entryStudents(c.id);
     if (!students.length) return html + emptyState('Keine Kinder in diesem Kurs', '', '', 'users');
     const rows = students.map(s => ({ s, r: calc(s, t, c) }));
-    html += `<p class="muted small range-info">${isSII(c) ? 'Oberstufe: Zeugnis in Punkten. ' : 'Sek I: Noten mit Tendenz (1,7 = 2+ · 2,0 = 2 · 2,3 = 2-). '}Gewichtung: schriftlich 50 % · SoMi 50 %${c.vocab ? ' (SoMi inkl. Vokabeltests, anteilig nach Anzahl)' : ''}${t.parts ? ' · SoMi = Schnitt der beiden Quartale (eingetragene SoMi-Quartalsnoten gehen vor, Stern *)' : ''}${t.quarter && sii ? ' · SoMi = eingetragene SoMi-Quartalsnote (*), sonst berechnet' : ''}. Zeile antippen zum Korrigieren.</p>
+    html += `<p class="muted small range-info">${isSII(c) ? 'Oberstufe: Zeugnis in Punkten. ' : 'Sek I: Noten mit Tendenz (1,7 = 2+ · 2,0 = 2 · 2,3 = 2-). '}Gewichtung: schriftlich 50 % · SoMi 50 %${c.vocab ? ' (SoMi: Tests 15 %, mündlich 85 %)' : ''}${t.parts ? ' · SoMi = Schnitt der beiden Quartale (eingetragene SoMi-Quartalsnoten gehen vor, Stern *)' : ''}${t.quarter && sii ? ' · SoMi = eingetragene SoMi-Quartalsnote (*), sonst berechnet' : ''}. Zeile antippen zum Korrigieren.</p>
       ${kidBar(students, false)}
       <div class="table-wrap"><table class="ov zt">
       <thead><tr><th>Name</th><th class="num">SoMi</th><th class="num">Schriftl.</th><th class="num">Vorschlag</th><th class="num">Zeugnis</th><th>Korrektur</th><th>Begründung</th></tr></thead>
@@ -4613,7 +4616,7 @@
         <label class="field"><span>Mündliche Noten</span><select data-change="classGradeMode"><option value="woche" ${weeklyMode(c) ? 'selected' : ''}>einmal pro Woche (Standard)</option><option value="stunde" ${weeklyMode(c) ? '' : 'selected'}>für einzelne Unterrichtsstunden</option></select></label>
         <label class="field"><span>Klassenarbeiten/Klausuren pro Halbjahr</span><select data-change="classExams"><option value="">automatisch (${examsRequired(c, 'HJ1')} im 1. / ${examsRequired(c, 'HJ2')} im 2. Halbjahr)</option>${[1, 2, 3, 4].map(n => `<option value="${n}" ${c.examsPerHj === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" data-change="classNoOral" ${c.noOral ? 'checked' : ''}><span>Keine mündlichen Noten mehr eintragen (zählt nicht mehr bei fehlenden Noten und Erinnerungen)</span></label>
-        <label class="check"><input type="checkbox" data-change="classVocab" ${c.vocab ? 'checked' : ''}><span>Vokabeltests in diesem Kurs (zählen anteilig zur SoMi-Note)</span></label>
+        <label class="check"><input type="checkbox" data-change="classVocab" ${c.vocab ? 'checked' : ''}><span>Vokabeltests in diesem Kurs (zählen 15 % der SoMi-Note)</span></label>
         <div class="field"><span>Farbe</span><div class="swatches">${COLORS.map(col => `<button type="button" class="swatch ${col === c.color ? 'on' : ''}" style="--sw:${col}" data-action="setColor" data-color="${col}" aria-label="Farbe ${col}"></button>`).join('')}</div></div>
       </section>
       <section class="panel">

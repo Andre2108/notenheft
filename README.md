@@ -1,6 +1,11 @@
-# Notenheft 7.5.2 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.5.3 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.5.3 – Tests fest 15 % der SoMi
+
+- **SoMi-Note:** Vokabeltests und Tests – irregular verbs zählen bei allen Kindern fest **15 %**, die mündlichen Noten 85 % (bisher anteilig nach Anzahl der Noten, daher schwankende Werte wie 17 % oder 20 %). Hat ein Kind nur mündliche Noten oder nur Tests, zählt das allein.
+- **Pfeile im dunklen Kopf sichtbar** (z. B. Tage blättern unter „Heute“, Monate unter „Mehrarbeit“).
 
 ## Neu in Version 7.5.2 – echtes PDF, Suche bei Tests
 
