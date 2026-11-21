@@ -928,7 +928,7 @@ button.glance-tile:not([data-action]) { cursor: default; }
 /* Kurse – Registerkarten */
 .course-tabs-row { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 10px; margin: 0 -2px 6px; scrollbar-width: none; }
 .course-tabs-row::-webkit-scrollbar { display: none; }
-.course-tabs-row.reg { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 57px); z-index: 10; background: var(--bg); padding-top: 8px; }
+.course-tabs-row.reg { position: sticky; top: calc(var(--toph, 57px) + var(--headh, 0px)); z-index: 10; background: var(--bg); padding-top: 8px; }
 .ctab { display: inline-flex; align-items: center; gap: 6px; flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 8px 12px; font-weight: 700; font-size: 14px; white-space: nowrap; color: var(--text); }
 .ctab i { width: 9px; height: 9px; border-radius: 50%; background: var(--cc); }
 .ctab small { font-weight: 500; color: var(--muted); font-size: 12px; }
@@ -1739,3 +1739,19 @@ button.ckw-c.x { background: #f1f5f9; color: #94a3b8; text-decoration: line-thro
 .ckw-c.off { background: repeating-linear-gradient(45deg, #f1f5f9 0 4px, #fff 4px 8px); }
 body:has(.rpad) #toast { bottom: calc(var(--tabh) + env(safe-area-inset-bottom) + 200px); }
 @media (min-width: 860px) { body:has(.rpad) #toast { bottom: 200px; } }
+
+/* =====================================================================
+   7.4: Kopfbalken bleibt stehen, Eintrags-Ansicht, Eintragen nach Bereichen, Mehrarbeitsantrag
+   ===================================================================== */
+.main > .page-head:first-child, .main > .start-head:first-child, .main > .chead.cdark { position: sticky; top: var(--toph, 0px); z-index: 12; }
+.ma-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ev-info { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: -4px 0 12px; border-radius: 14px; background: color-mix(in srgb, var(--cc, var(--accent)) 12%, var(--card)); border-left: 5px solid var(--cc, var(--accent)); }
+.ev-info b { font-size: 17px; }
+.ev-info p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.ev-dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 12px; font-size: 15px; }
+.ev-dl dt { color: var(--muted); }
+.ev-dl dd { margin: 0; }
+.neu-sec { margin: 0 0 18px; }
+.neu-sec h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 4px 2px 8px; }
+.mode-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 6px 2px 8px; }
+.mode-row small .link { font-size: inherit; padding: 0; }

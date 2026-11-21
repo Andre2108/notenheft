@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.3.1';
+  const APP_VERSION = '7.4';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -764,7 +764,7 @@
   const gramLabel = n => GRAM_STEPS.find(([m]) => n >= m)[1];
   const isGram = a => !!a && a.scale === 'gram30';
   const testPts = (a, r) => isGram(a) ? `${r.points}/${GRAM_MAX} richtig` : `${fmtNum(r.points, 1).replace(',0', '')} P.`;
-  const testKind = a => isGram(a) ? 'Grammatiktest' : 'Vokabeltest';
+  const testKind = a => isGram(a) ? 'Test – irregular verbs' : 'Vokabeltest';
   const snap = (c, v) => v == null ? null : isSII(c) ? pointsToValue(toPoints(v)) : gridValue(gridLabel(v));
   const gradeText = (c, v) => v == null ? '–' : isSII(c) ? fmtPts(toPoints(v)) : gridLabel(v);
   const valCls = v => avgCls(v);
@@ -952,7 +952,9 @@
     persistLocal();
     if (sync) scheduleSync();
   }
+  const weekMiss = (cid, ws) => weekCourseStatus(ws).find(x => x.c.id === cid)?.miss || 0;
   function addEntry({ sid, cid, kind = 'note', grade = null, date, note = '' }) {
+    const ws0 = weekKey(date), missBefore = weekMiss(cid, ws0);
     // Nur ein Eintrag pro Kind und Termin: vorhandenen Eintrag an diesem Tag ersetzen statt einen zweiten anzulegen
     const dups = Object.values(S.data.entries).filter(x => !x.deleted && x.classId === cid && x.studentId === sid && x.date === date);
     const prev = entryOn(cid, sid, date);
@@ -960,7 +962,17 @@
       note: note || (prev?.note ?? ''), createdAt: prev?.createdAt || now(), updatedAt: now() };
     commit(d => { for (const x of dups) if (x.id !== e.id) d.entries[x.id] = { id: x.id, deleted: true, updatedAt: now() }; d.entries[e.id] = e; });
     Object.defineProperty(e, 'prev', { value: prev ? Object.assign({}, prev) : null, enumerable: false });
+    if (missBefore && !weekMiss(cid, ws0)) setTimeout(() => notenFertig(cid, ws0, e), 450); // letztes Kind: Eintragung schließen
     return e;
+  }
+  function notenFertig(cid, ws, e) {
+    if (S.view !== 'kurse' || S.courseId !== cid || S.courseTab !== 'muendlich' || weekMiss(cid, ws)) return;
+    const c = S.data.classes[cid];
+    try { weeklyGradeTodo(); } catch { /* egal */ }
+    const rest = weekCourseStatus(ws).filter(x => x.miss).length;
+    S.view = 'start'; S.courseId = null; S.rSel = null; S.cardIdx = 0; saveUI(); render(); window.scrollTo(0, 0);
+    toast(`${clsLabel(c)}: alle Noten für KW ${isoWeek(parseISO(ws))} eingetragen${rest ? ` · noch ${plural(rest, 'Kurs', 'Kurse')} offen` : ''}`,
+      { ms: 6000, undo: () => { undoEntry(e); openNoten(cid, e.date); } });
   }
   function undoEntry(e) { // Rückgängig: vorherigen Eintrag wiederherstellen bzw. neuen entfernen
     if (e.prev) commit(d => { d.entries[e.id] = Object.assign({}, e.prev, { updatedAt: now() }); });
@@ -1154,6 +1166,8 @@
         S.sync.state = 'ok'; S.sync.last = now(); S.sync.msg = '';
         kmInbox({ force }).catch(e => console.warn('Klausurmanager:', e));
         try { weeklyGradeTodo(); } catch (e) { console.warn('Noten-To-do:', e); }
+        try { maAntragTodo(); } catch (e) { console.warn('Mehrarbeit-To-do:', e); }
+        try { examTodos(); } catch (e) { console.warn('Prüfungs-To-do:', e); }
         pushStatusWrite().catch(e => console.warn('Push-Status:', e));
         ewhCatalogRefresh().then(() => softRender()).catch(e => console.warn('Katalog:', e));
         pcExport().catch(e => console.warn('PC-Termine:', e));
@@ -1491,6 +1505,7 @@
     year: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18M7 13h2M11 13h2M15 13h2M7 17h2M11 17h2M15 17h2"/>',
     award: '<circle cx="12" cy="9" r="6"/><path d="m8.2 13.8-1.7 7.2L12 18l5.5 3-1.7-7.2"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     print: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>'
   };
@@ -1618,6 +1633,7 @@
     const kept = {};
     app.querySelectorAll(KEEP_SCROLL).forEach((el, i) => { kept[S.view + '|' + el.className.split(' ')[0] + '|' + i] = el.scrollLeft; });
     renderInner();
+    stickyVars();
     if ((S.kidQ || '').trim()) applyKidFilter();
     app.querySelectorAll(KEEP_SCROLL).forEach((el, i) => {
       const v = kept[S.view + '|' + el.className.split(' ')[0] + '|' + i];
@@ -1630,6 +1646,15 @@
       }
     });
   }
+  // Dunkler Kopfbalken bleibt stehen: Höhe der Kopfzeile (Handy) und des Balkens als CSS-Variablen
+  function stickyVars() {
+    const tb = document.querySelector('.topbar'), st = document.documentElement.style;
+    const th = tb && getComputedStyle(tb).position === 'sticky' ? tb.offsetHeight : 0;
+    const h = document.querySelector('.main > .page-head:first-child, .main > .start-head:first-child, .main > .chead.cdark');
+    st.setProperty('--toph', th + 'px');
+    st.setProperty('--headh', (h ? h.offsetHeight : 0) + 'px');
+  }
+  window.addEventListener('resize', () => { try { stickyVars(); } catch { /* egal */ } });
   function renderInner() {
     const app = $('#app');
     entCache.src = null; untisCache = null;
@@ -2159,14 +2184,16 @@
   // Reiter „Eintragen“: alles, was man neu anlegen kann, an einer Stelle
   function viewNeu() {
     const cs = classesSorted();
-    const items = [['newTodo', '', 'todo', 'To-do', 'mit Datum, Uhrzeit, Erinnerung'], ['newEvent', 'termin', 'cal', 'Termin', 'auch mit ausfallenden Stunden'],
-      ['newEvent', 'ausfall', 'ban', 'Ausfall', 'Stunde oder ganzer Tag'], ['newEvent', 'pruefung', 'flag', 'Prüfung ansetzen', 'Klassenarbeit, Klausur, Test']];
-    if (cs.some(c => partnersOf(c).length)) items.push(['newEvent', 'tausch', 'swap', 'Stunden tauschen', 'gleiche Klasse, anderes Fach']);
-    if (cs.some(c => studentsOf(c.id).length)) items.push(['startNoten', '', 'edit', 'Mündliche Noten', 'Wochennote je Kind']);
-    if (cs.some(c => c.vocab)) items.push(['startVocab', '', 'exam', 'Vokabeltest', 'Punkte → Note'], ['startGram', '', 'exam', 'Grammatiktest', 'irregular verbs: Lücken → Note']);
-    if (kmKey()) items.push(['kmPaste', '', 'copy', 'Klausurnoten einfügen', 'aus der Korrektur-App']);
-    return pageHead('Eintragen', 'Was möchtest du neu eintragen?') + `<div class="start-grid neu-grid">${items.map(([a, type, ic, title, sub]) =>
-      `<button type="button" class="start-tile c-neu" data-action="${a}" ${type ? `data-type="${type}"` : ''}>${icon(ic)}<b>${title}</b><small>${sub}</small></button>`).join('')}</div>`;
+    const noten = [], plan = [['newEvent', 'pruefung', 'flag', 'Prüfung ansetzen', 'Klassenarbeit, Klausur, Test'], ['newEvent', 'termin', 'cal', 'Termin', 'auch mit ausfallenden Stunden'],
+      ['newEvent', 'ausfall', 'ban', 'Ausfall', 'Stunde oder ganzer Tag']];
+    if (cs.some(c => partnersOf(c).length)) plan.push(['newEvent', 'tausch', 'swap', 'Stunden tauschen', 'gleiche Klasse, anderes Fach']);
+    if (cs.some(c => studentsOf(c.id).length)) noten.push(['startNoten', '', 'edit', 'Mündliche Noten', 'Wochennote je Kind']);
+    if (cs.some(c => c.vocab)) noten.push(['startVocab', '', 'exam', 'Vokabeltest', 'Punkte → Note'], ['startGram', '', 'exam', 'Test – irregular verbs', 'Lücken → Note']);
+    if (kmKey()) noten.push(['kmPaste', '', 'copy', 'Klausurnoten einfügen', 'aus der Korrektur-App']);
+    const orga = [['newTodo', '', 'todo', 'To-do', 'mit Datum, Uhrzeit, Erinnerung'], ['maNew', '', 'clock', 'Vertretung nachtragen', 'für die Mehrarbeit']];
+    const tile = ([a, type, ic, title, sub]) => `<button type="button" class="start-tile c-neu" data-action="${a}" ${type ? `data-type="${type}"` : ''}>${icon(ic)}<b>${title}</b><small>${sub}</small></button>`;
+    const grp = (h, items) => items.length ? `<section class="neu-sec"><h2>${h}</h2><div class="start-grid neu-grid">${items.map(tile).join('')}</div></section>` : '';
+    return pageHead('Eintragen', 'Was möchtest du neu eintragen?') + grp('Noten', noten) + grp('Termine &amp; Unterricht', plan) + grp('Organisation', orga);
   }
   // Schultage (Mo–Fr ohne Feiertage/Ferien) ab heute bis vor die nächsten Ferien
   function holidayCountdown(t) {
@@ -2691,7 +2718,9 @@
   }
   function weekRange() { return [S.weekStart, addDaysISO(S.weekStart, 6)]; }
   // Mündliche Noten: Standard eine Note pro Kind und Woche; je Kurs auf Einzelstunden umschaltbar
-  const weeklyMode = c => !!c && c.gradeMode !== 'stunde';
+  const weeklyDefault = c => !!c && c.gradeMode !== 'stunde';
+  // je Kurs und Woche umschaltbar (c.modeWeeks[Montag] = 'woche' | 'stunde'), sonst die Kurs-Einstellung
+  const weeklyMode = (c, ws = S.weekStart) => { const o = c?.modeWeeks?.[ws]; return o ? o === 'woche' : weeklyDefault(c); };
   function weekGradeDay(cid) { // Datum der Wochennote: letzter Unterrichtstag der Woche, sonst Freitag
     const ds = lessonsBetween(cid, S.weekStart, addDaysISO(S.weekStart, 4)).filter(l => !l.cancelled && !l.away).map(l => l.date).sort();
     return ds.length ? ds[ds.length - 1] : addDaysISO(S.weekStart, 4);
@@ -2736,7 +2765,9 @@
         <button type="button" class="icon-btn" data-action="weekNext" aria-label="Nächste Woche">${icon('right')}</button>
       </div>
       ${courseStrip(cls)}
-      ${weeklyMode(cls) ? `<p class="muted small week-mode-info">Eine Note pro Kind für KW ${isoWeek(ws)} – erneutes Antippen ersetzt sie. Einzelstunden: Kurs → Zahnrad → „Mündliche Noten“.</p>` : `<div class="days" role="group" aria-label="Datum für neue Einträge">
+      <div class="mode-row"><div class="seg" role="group" aria-label="Mündliche Noten in KW ${isoWeek(ws)}">${[['woche', 'Wochennote'], ['stunde', 'Einzelstunden']].map(([k, l]) => `<button type="button" data-action="gradeModeWeek" data-m="${k}" class="${(k === 'woche') === weeklyMode(cls) ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <small class="muted">${cls.modeWeeks?.[S.weekStart] && weeklyMode(cls) !== weeklyDefault(cls) ? `nur KW ${isoWeek(ws)} · <button type="button" class="link" data-action="gradeModeDefault">als Standard</button>` : `Standard für ${esc(cls.name)}`}</small></div>
+      ${weeklyMode(cls) ? `<p class="muted small week-mode-info">Eine Note pro Kind für KW ${isoWeek(ws)} – erneutes Antippen ersetzt sie.</p>` : `<div class="days" role="group" aria-label="Datum für neue Einträge">
         ${[0, 1, 2, 3, 4].map(i => { const d = addDays(ws, i); const iso = toISO(d); return `<button type="button" data-action="setDay" data-day="${iso}" class="${iso === day ? 'on' : ''} ${lessonDays.has(iso) ? 'has-lesson' : ''}" ${ccStyle(cls)} title="${lessonDays.has(iso) ? 'Unterricht an diesem Tag' : ''}">${WD[i]} <small>${d.getDate()}.</small></button>`; }).join('')}
       </div>`}
       <div class="progress-line">
@@ -3194,10 +3225,10 @@
         ${kmKey() ? `<button type="button" class="btn import-btn" data-action="kmPaste">${icon('copy')} Ergebnis aus der Korrektur-App einfügen</button>` : ''}
         <label class="btn file-btn import-btn">${icon('upload')} Noten aus dem Korrektur-Tool importieren<input type="file" accept=".xlsx" data-change="importKA"></label>
       </section>
-      <section class="section"><div class="section-head"><h2>Vokabel- &amp; Grammatiktests</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Grammatiktest</button></span>` : ''}</div>
+      <section class="section"><div class="section-head"><h2>Vokabeltests &amp; Tests – irregular verbs</h2>${c.vocab ? `<span class="head-links"><button type="button" class="link" data-action="newAssess" data-type="vokabel">${icon('plus')} Vokabeltest</button><button type="button" class="link" data-action="newAssess" data-type="vokabel" data-scale="gram30">${icon('plus')} Test – irregular verbs</button></span>` : ''}</div>
         ${c.vocab ? (vok.length ? `<div class="as-list">${vok.map(row).join('')}</div>${vocabMatrix(c, vok, students)}`
-          : '<p class="muted small pad">Noch keine Tests. Vokabeltest: max. 10 Punkte, halbe Punkte möglich. Grammatiktest (irregular verbs): Zahl der richtigen Lücken (von 30) antippen. Die Note wird jeweils automatisch berechnet.</p>')
-          : `<div class="panel slim"><p class="muted small">Vokabel- und Grammatiktests sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
+          : '<p class="muted small pad">Noch keine Tests. Vokabeltest: max. 10 Punkte, halbe Punkte möglich. Test – irregular verbs: Zahl der richtigen Lücken (von 30) antippen. Die Note wird jeweils automatisch berechnet.</p>')
+          : `<div class="panel slim"><p class="muted small">Vokabeltests und Tests – irregular verbs sind für diesen Kurs ausgeschaltet. Eingeschaltet zählen sie als Teil der SoMi-Note (anteilig nach Anzahl der Noten).</p><button type="button" class="btn small" data-action="enableVocab">Tests einschalten</button></div>`}
       </section>`;
   }
   function vocabMatrix(c, vok, students) {
@@ -3219,7 +3250,7 @@
     const vals = students.map(s => resultOf(a.id, s.id)).filter(r => r && r.value != null).map(r => r.value);
     const spiegel = [1, 2, 3, 4, 5, 6].map(n => vals.filter(v => Math.round(v + 1e-9) === n || (n === 1 && v < 1)).length);
     let html = `<div class="subhead"><button type="button" class="btn ghost" data-action="closeAssess">${icon('left')} Arbeiten/Klausuren</button></div>
-      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? (isGram(a) ? 'Grammatiktest (irregular verbs), 30 Lücken – zählt wie ein Vokabeltest' : 'Vokabeltest, max. 10 Punkte') : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
+      <section class="panel as-head" ${ccStyle(c)}><div><h2>${esc(a.title)}</h2><p class="muted small">${esc(clsLabel(c))} · ${fmtLong(a.date)} · ${a.type === 'vokabel' ? (isGram(a) ? 'Test – irregular verbs, 30 Lücken – zählt wie ein Vokabeltest' : 'Vokabeltest, max. 10 Punkte') : a.art === 'muendlich' ? 'mündliche Prüfung (zählt zum schriftlichen Teil)' : 'schriftliche Leistung'}${a.type !== 'vokabel' ? ` · Gewicht ×${fmtNum(weightOf(a), 1).replace(',0', '')}` : ''}</p>
         <div class="spiegel">${spiegel.map((n, i) => `<span class="g${i + 1}"><b>${i + 1}</b>${n}</span>`).join('')}<span class="sp-avg">Ø ${vals.length ? fmtNum(mean(vals), 2) : '–'}</span></div></div>
         <button type="button" class="icon-btn plain" data-action="editAssess" data-aid="${a.id}" aria-label="Bearbeiten">${icon('pencil')}</button></section>
       ${a.km ? `<p class="muted small">Noten aus dem Klausurmanager übernommen.${a.kmMissing && a.kmMissing.length ? ` Ohne Kind im Kurs: ${esc(a.kmMissing.join(', '))} – Kurs → Zahnrad → „Aus Kürzel-Tabelle übernehmen“.` : ''}</p>` : ''}
@@ -3324,9 +3355,9 @@
     const c = S.data.classes[a?.classId || preset.cid || S.classId];
     const nVok = assessmentsOf(c.id, 'vokabel').filter(x => isGram(x) === gram).length;
     const res = await openModal({
-      title: isNew ? (type === 'vokabel' ? (gram ? 'Neuer Grammatiktest (irregular verbs)' : 'Neuer Vokabeltest') : 'Neue schriftliche Leistung') : 'Bearbeiten',
+      title: isNew ? (type === 'vokabel' ? (gram ? 'Neuer Test – irregular verbs' : 'Neuer Vokabeltest') : 'Neue schriftliche Leistung') : 'Bearbeiten',
       autofocus: canHover(),
-      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? (gram ? `Grammatiktest ${nVok + 1}` : `Vokabeltest ${nVok + 1}`) : ''))}" placeholder="${type === 'vokabel' ? (gram ? 'z. B. Irregular verbs 1' : 'z. B. Vokabeltest Unit 1') : art === 'muendlich' ? 'z. B. Mündliche Prüfung' : 'z. B. Klassenarbeit 1'}"></label>
+      body: `<label class="field"><span>Bezeichnung</span><input id="m-t" maxlength="60" value="${esc(a?.title || preset.title || (type === 'vokabel' ? (gram ? `Test – irregular verbs ${nVok + 1}` : `Vokabeltest ${nVok + 1}`) : ''))}" placeholder="${type === 'vokabel' ? (gram ? 'z. B. Irregular verbs 1' : 'z. B. Vokabeltest Unit 1') : art === 'muendlich' ? 'z. B. Mündliche Prüfung' : 'z. B. Klassenarbeit 1'}"></label>
         <label class="field"><span>Datum</span><input type="date" id="m-d" value="${a?.date || preset.date || todayISO()}"></label>
         ${type !== 'vokabel' ? `<div class="two-col"><label class="field"><span>Art</span><select id="m-art"><option value="schriftlich" ${art !== 'muendlich' ? 'selected' : ''}>Klassenarbeit / Klausur</option><option value="muendlich" ${art === 'muendlich' ? 'selected' : ''}>Mündliche Prüfung</option></select></label>
           <label class="field"><span>Gewichtung</span><select id="m-w">${[0.5, 1, 1.5, 2, 3].map(w => `<option value="${w}" ${Math.abs(w - wNow) < 1e-9 ? 'selected' : ''}>×${String(w).replace('.', ',')}${w === 1 ? ' (normal)' : ''}</option>`).join('')}</select></label></div>` : ''}`,
@@ -4495,12 +4526,30 @@
     }
     return [...rows.values()].map(r => ({ ...r, hours: sum(r.ls.map(l => l.hours)) }));
   }
+  // Wöchentliche Untis-Stunden ohne Notenheft-Kurs (z. B. LW, nicht GD/Bereitschaft): zählen wie ein Kurs.
+  // Entfällt eine davon laut Untis, hat das immer dienstliche Gründe: anrechenbar, wird nicht gegengerechnet.
+  const isGD = x => /^(gd|gottesdienst)$/i.test(String(x.fach || x.titel || '').trim());
+  function regelAusfall(d) {
+    if (!untisCals().length || freeReason(d)) return [];
+    const U = untisData(), base = planLessonsOn(d), out = [];
+    for (const t of U.byDate.get(d) || []) {
+      if (!t.entfall || !t.titel || isBer(t) || isGD({ fach: t.titel }) || !U.regular.has(untisKey(t))) continue;
+      const time = t.start.slice(11, 16), endT = (t.ende || t.start).slice(11, 16);
+      if (base.some(l => overlapMin(l.start, l.end, time, endT) > 0)) continue; // eigener Kurs: läuft über die Ausfälle
+      const pr = periodRange(time, endT, d); if (!pr) continue;
+      const fach = t.titel.replace(/\s+/g, ' ').trim(), prev = out[out.length - 1];
+      if (prev && prev.fach === fach && prev.to + 1 === pr[0]) { prev.to = pr[1]; prev.end = endT; continue; }
+      out.push({ date: d, fach, from: pr[0], to: pr[1], start: time, end: endT });
+    }
+    return out.map(x => ({ ...x, hours: Math.max(1, Math.round((tmin(x.end) - tmin(x.start)) / 45)) }));
+  }
   function maMonthStats(ym) {
     const from = ym + '-01', to = monthEnd(ym);
     const ma = maList().filter(m => m.date >= from && m.date <= to).sort((a, b) => a.date.localeCompare(b.date) || a.from - b.from);
-    const aus = ausfallRows(from, to);
+    const aus = ausfallRows(from, to), regAus = [];
+    for (let d = from; d <= to; d = addDaysISO(d, 1)) regAus.push(...regelAusfall(d));
     const plus = sum(ma.filter(m => m.zaehlt !== false).map(maHours)), minus = sum(aus.filter(r => ausGrund(r.ev) === 'ersatzlos').map(r => r.hours));
-    return { from, to, ma, aus, plus, minus, saldo: plus - minus, offen: ma.filter(m => m.zaehlt !== false && !maDone(m)).length, ohneKuerzel: ma.filter(m => m.zaehlt !== false && !m.fuer).length };
+    return { from, to, ma, aus, regAus, plus, minus, saldo: plus - minus, offen: ma.filter(m => m.zaehlt !== false && !maDone(m)).length, ohneKuerzel: ma.filter(m => m.zaehlt !== false && !m.fuer).length };
   }
   const ausGrund = e => e.grund || (e.ersatzlos ? 'ersatzlos' : ''); // '' | 'ersatzlos' | 'krank'
   const maAlt = () => { const sy = termCfg().start; return maList().filter(m => m.date < sy); };
@@ -4557,11 +4606,15 @@
           <span class="ev-main"><strong>${r.ls.map(l => esc(clsLabel(l.cls))).join(', ')}</strong><small>${r.ls.map(l => pLabel(l.from, l.to)).join(', ')} · ${esc(r.ev.note || 'Ausfall')}</small>
             <select class="ma-grund ${g}" data-change="maGrund" data-eid="${esc(r.ev.id)}">${GRUENDE.map(([v, lab]) => `<option value="${v}" ${v === g ? 'selected' : ''}>${lab}</option>`).join('')}</select></span>
           <span class="ev-right"><b>${g === 'ersatzlos' ? '−' : ''}${r.hours}</b><small>${g === 'ersatzlos' ? 'Std.' : 'Std. · zählt nicht'}</small></span></span></div>`; }).join('')}</div>`
-      : '<p class="empty-line">Keine ausgefallenen Stunden in diesem Monat.</p>';
+      : st.regAus.length ? '' : '<p class="empty-line">Keine ausgefallenen Stunden in diesem Monat.</p>';
+    if (st.regAus.length) html += `<div class="ev-list">${st.regAus.map(r => `<div class="ma-row aus off"><span class="ma-main"><span class="ev-date"><b>${WD[wdOf(r.date)]}</b>${fmtISO(r.date)}</span>
+        <span class="ev-main"><strong>${esc(r.fach)}</strong><small>${pLabel(r.from, r.to)} · entfällt laut WebUntis – dienstlich, zählt als Iststunde</small></span>
+        <span class="ev-right"><b>${r.hours}</b><small>Std. · zählt nicht</small></span></span></div>`).join('')}</div>`;
     html += '</section>';
     html += `<section class="section"><div class="section-head"><h2>${picto('termin', 'sm')} Für den Antrag</h2></div>
-      <p class="muted small">Ab ${MA_SCHWELLE} verrechneten Stunden im Kalendermonat kannst du die Vergütung beantragen. Das Formular folgt; bis dahin die Liste kopieren.</p>
-      <button type="button" class="btn" data-action="maCopy" data-ym="${ym}">${icon('list')} Liste für ${esc(monthLabel(ym))} kopieren</button></section>`;
+      <p class="muted small">Ab ${MA_SCHWELLE} verrechneten Stunden im Kalendermonat kannst du die Vergütung beantragen. Am letzten Schultag des Monats erscheint dafür ein To-do.${S.data.todos['ma-antrag-' + ym]?.gesendet ? ` Verschickt am ${fmtISO(S.data.todos['ma-antrag-' + ym].gesendet.slice(0, 10), true)}.` : ''}</p>
+      <div class="ma-btns"><button type="button" class="btn ${ok ? 'primary' : ''}" data-action="maAntrag" data-ym="${ym}">${icon('mail')} Antrag per Mail</button>
+      <button type="button" class="btn" data-action="maCopy" data-ym="${ym}">${icon('list')} Liste kopieren</button></div></section>`;
     return html;
   }
   async function maEdit(m0, { neu = false } = {}) { // Details einer Vertretung; Kürzel der vertretenen Lehrkraft eintragen
@@ -4621,6 +4674,81 @@
     if (x.regel) return openModal({ title: x.fach, body: `<div class="ma-head regel"><b>${fmtLong(date)}</b><span>${pLabel(x.from, x.to)} · ${esc(x.start)}–${esc(x.end)} Uhr</span></div>
       ${x.klassen.length ? `<p><b>Klassen:</b> ${esc(x.klassen.join(', '))}</p>` : ''}${x.ort ? `<p class="room-big">${esc(x.ort)}</p>` : ''}<p class="muted small">Wöchentliche Stunde laut WebUntis (kein Kurs im Notenheft, zählt nicht als Mehrarbeit).</p>`, actions: [{ label: 'Schließen' }] });
     return maEdit({ id, quelle: 'untis', date, from: x.from, to: x.to, start: x.start, end: x.end, fach: x.fach, klassen: x.klassen.join(', '), ort: x.ort || '', ber: x.ber, classId: x.cls?.id || null, zaehlt: true, fuer: '' });
+  }
+  /* ---------- Mehrarbeitsantrag (Schulformular): Soll/Ist je Tag, per Knopfdruck über GitHub als Mail ---------- */
+  const FACH_LANG = { d: 'Deutsch', e: 'Englisch', m: 'Mathematik', f: 'Französisch', l: 'Latein', s: 'Spanisch', bi: 'Biologie', ch: 'Chemie', ph: 'Physik',
+    ek: 'Erdkunde', ge: 'Geschichte', pk: 'Politik', po: 'Politik', sw: 'Sozialwissenschaften', wi: 'Wirtschaft', kr: 'kath. Religion', er: 'ev. Religion',
+    pp: 'Prakt. Philosophie', ppl: 'Prakt. Philosophie', pl: 'Philosophie', ku: 'Kunst', mu: 'Musik', sp: 'Sport', if: 'Informatik', nw: 'Naturwissenschaften',
+    kl: 'Klassengem.', klg: 'Klassengem.', kls: 'Klassengem.', lw: 'Lernwerkstatt' };
+  const fachLang = f => FACH_LANG[String(f || '').trim().toLowerCase()] || String(f || '').trim() || 'Unterricht';
+  const std45 = x => { const m = x.start && x.end ? tmin(x.end) - tmin(x.start) : 0; return m > 0 ? Math.max(1, Math.round(m / 45)) : Math.max(1, (x.to || x.from) - x.from + 1); }; // 90 Min. = 2, 45 Min. = 1
+  function maSollTag(d) { // Pflichtstunden laut Stundenplan: eigene Kurse + wöchentliche Untis-Stunden ohne Kurs (z. B. LW), ohne GD und Bereitschaft
+    if (freeReason(d)) return 0;
+    let n = sum(planLessonsOn(d).filter(l => !l.swapIn).map(l => std45({ ...l, ...(l.start ? {} : periodTimes(l.from, l.to, d)) })));
+    if (untisCals().length) n += sum(untisDay(d).regel.filter(x => !isGD(x) && !x.ber).map(std45)) + sum(regelAusfall(d).map(x => x.hours));
+    return n;
+  }
+  const ddmmyy = iso => { const [y, m, d] = iso.split('-'); return `${+d}.${+m}.${y.slice(2)}`; };
+  function maAntragDaten(ym) {
+    const st = maMonthStats(ym), tage = {}, zeilen = [];
+    for (let d = st.from; d <= st.to; d = addDaysISO(d, 1)) {
+      const soll = maSollTag(d);
+      const plus = sum(st.ma.filter(m => m.date === d && m.zaehlt !== false).map(std45));
+      const aus = st.aus.filter(r => r.date === d);
+      const minus = sum(aus.filter(r => ausGrund(r.ev) === 'ersatzlos').map(r => r.hours)), anr = sum(aus.filter(r => ausGrund(r.ev) !== 'ersatzlos').map(r => r.hours)) + sum(st.regAus.filter(r => r.date === d).map(r => r.hours));
+      const ist = Math.max(0, soll - minus) + plus;
+      if (soll || ist || anr) tage[+d.slice(8)] = { soll, ist, anr };
+    }
+    for (const m of st.ma.filter(m => m.zaehlt !== false)) {
+      const h = std45(m);
+      zeilen.push({ iso: m.date, from: m.from, datum: ddmmyy(m.date), klasse: m.klassen || '-', zusatz: fachLang(m.fach) + (h > 1 ? ` (${h} Stunden)` : ''), aus: '', grund: 'Abwesenheit Fachlehrkraft' });
+    }
+    const note = (e, alt) => e.note && !/webuntis/i.test(e.note) ? e.note : alt;
+    for (const r of st.regAus) zeilen.push({ iso: r.date, from: r.from, datum: ddmmyy(r.date), klasse: r.fach, zusatz: '', aus: '', grund: 'Ausfall aus dienstlichen Gründen (anrechenbar)' });
+    for (const r of st.aus) {
+      const g = ausGrund(r.ev);
+      if (g === 'krank') continue; // Krankheitstage stehen nicht in der Tabelle
+      const kl = [...new Set(r.ls.map(l => l.cls.name))].join(', '), from = r.ls[0]?.from || 0;
+      if (g === 'ersatzlos') zeilen.push({ iso: r.date, from, datum: ddmmyy(r.date), klasse: kl, zusatz: '', aus: String(r.hours), grund: note(r.ev, 'Unterrichtsausfall') });
+      else zeilen.push({ iso: r.date, from, datum: ddmmyy(r.date), klasse: kl, zusatz: '', aus: '', grund: note(r.ev, 'Ausfall') + ' (anrechenbar)' });
+    }
+    zeilen.sort((a, b) => a.iso.localeCompare(b.iso) || a.from - b.from);
+    const t = todayISO();
+    return { ym, monat: monthLabel(ym), datum: `${t.slice(8)}.${t.slice(5, 7)}.${t.slice(0, 4)}`, erstellt: new Date().toISOString(), tage,
+      zeilen: zeilen.map(({ iso, from, ...z }) => z), offen: st.offen,
+      summe: { soll: sum(Object.values(tage).map(x => x.soll)), ist: sum(Object.values(tage).map(x => x.ist)) } };
+  }
+  function lastSchoolDay(ym) { for (let d = monthEnd(ym); d >= ym + '-01'; d = addDaysISO(d, -1)) if (!freeReason(d)) return d; return null; }
+  const prevYm = ym => { const y = +ym.slice(0, 4), m = +ym.slice(5, 7); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+  function maAntragTodo() { // ab dem letzten Schultag des Monats: To-do „Mehrarbeitsantrag stellen“, wenn genug Stunden zusammenkommen
+    if (!S.data) return;
+    const t = todayISO();
+    for (const ym of [prevYm(t.slice(0, 7)), t.slice(0, 7)]) {
+      const id = 'ma-antrag-' + ym, last = lastSchoolDay(ym);
+      if (ym + '-01' < MA_START || S.data.todos[id] || !last || t < last) continue;
+      if (maMonthStats(ym).saldo < MA_SCHWELLE) continue;
+      commit(d => { d.todos[id] = { id, auto: 'mehrarbeit', ym, cat: 'sonst', text: `Mehrarbeitsantrag ${monthLabel(ym)} stellen`, note: 'Antippen: ausgefüllten Antrag per Mail schicken', classId: null, date: last, done: false, createdAt: now(), updatedAt: now() }; }, { sync: true });
+    }
+  }
+  async function maAntrag(ym) {
+    if (!ghReady()) return toast('Dafür muss die Synchronisierung über GitHub eingerichtet sein.', { error: true });
+    const a = maAntragDaten(ym), td = S.data.todos['ma-antrag-' + ym];
+    const mehr = a.summe.ist - a.summe.soll;
+    const r = await openModal({ title: `Mehrarbeitsantrag ${a.monat}`,
+      body: `${td?.gesendet ? `<div class="ma-hint">${icon('check')}<span>Schon am ${fmtISO(td.gesendet.slice(0, 10), true)} verschickt. Du kannst ihn erneut schicken.</span></div>` : ''}
+        ${glance([{ value: String(a.summe.soll), label: 'Sollstunden', tone: 'less' }, { value: String(a.summe.ist), label: 'Iststunden', tone: 'term' }, { value: String(mehr), label: 'Mehrarbeit', tone: mehr >= MA_SCHWELLE ? 'tdo' : 'tdo zero' }], true)}
+        ${a.offen ? `<p class="muted small">${plural(a.offen, 'Stunde ist', 'Stunden sind')} noch nicht gehalten und schon mitgezählt.</p>` : ''}
+        ${mehr < MA_SCHWELLE ? `<p class="muted small">Unter ${MA_SCHWELLE} Stunden – ein Antrag lohnt sich in der Regel nicht.</p>` : ''}
+        <p class="muted small">Das ausgefüllte Formular (Word und PDF, Datum von heute, „nein“ angekreuzt, ${plural(a.zeilen.length, 'Zeile', 'Zeilen')} in der Tabelle) kommt in etwa 2–3 Minuten an deine Schuladresse.</p>`,
+      actions: [{ label: 'Abbrechen', value: null }, { label: td?.gesendet ? 'Erneut senden' : 'Per Mail senden', cls: 'primary', value: true }] });
+    if (!r) return;
+    try {
+      await GH.putText(S.device.gh, 'mehrarbeit/auftrag.json', JSON.stringify(a, null, 1), `Notenheft: Mehrarbeitsantrag ${a.monat}`);
+      const id = 'ma-antrag-' + ym;
+      commit(d => { const x = d.todos[id] && !d.todos[id].deleted ? d.todos[id] : { id, auto: 'mehrarbeit', ym, cat: 'sonst', text: `Mehrarbeitsantrag ${monthLabel(ym)} stellen`, classId: null, date: todayISO(), createdAt: now() };
+        d.todos[id] = Object.assign({}, x, { done: true, autoDone: true, doneAt: now(), gesendet: new Date().toISOString(), updatedAt: now() }); });
+      toast('Antrag angefordert – die Mail kommt in etwa 2–3 Minuten.', { ms: 6000 });
+    } catch (e) { toast('Senden hat nicht geklappt: ' + e.message, { error: true, ms: 7000 }); }
   }
   function viewMehr() {
     const g = S.device.gh || {};
@@ -4852,8 +4980,56 @@
   /* =====================================================================
      Aktionen: Termine, Stunden, Kurse
      ===================================================================== */
+  async function eventInfo(ev) { // vorhandener Eintrag: erst nur ansehen
+    const c = ev.classId ? S.data.classes[ev.classId] : null, t = todayISO();
+    const title = `${evTitle(ev)}${ev.type === 'pruefung' && c?.subject ? ' ' + c.subject : ''}`;
+    const rows = [];
+    if (!c && ev.type === 'ausfall') rows.push(['Kurs', 'ganzer Tag – alle Kurse']);
+    if (ev.time) rows.push(['Uhrzeit', `${esc(ev.time)}${ev.timeEnd ? '–' + esc(ev.timeEnd) : ''} Uhr`]);
+    if (ev.from != null) rows.push(['Stunden', pLabel(ev.from, ev.to ?? ev.from)]);
+    if (ev.type === 'pruefung' && ev.date >= t && ev.classId) { const inf = examInfo(ev); if (inf.lessons != null) rows.push(['bis dahin', plural(inf.lessons, 'Unterrichtsstunde', 'Unterrichtsstunden')]); }
+    if (ev.type === 'ausfall' && ev.grund) rows.push(['verrechnen', ev.grund === 'ersatzlos' ? 'ersatzlos – wird mit Mehrarbeit verrechnet' : 'krank – nicht verrechnet']);
+    const linked = live(S.data.events).filter(x => x.type === 'ausfall' && x.terminId === ev.id);
+    if (linked.length) rows.push(['fällt aus', linked.map(x => esc(clsLabel(S.data.classes[x.classId]))).join(', ')]);
+    if (ev.note) rows.push([ev.type === 'ausfall' ? 'Grund' : ev.type === 'pruefung' ? 'Themen' : 'Notiz', esc(ev.note).replace(/\n/g, '<br>')]);
+    const a = ev.type === 'pruefung' ? examAssessment(ev) : null;
+    const r = await openModal({ title,
+      body: `<div class="ev-info" ${c ? ccStyle(c) : ''}>${picto(ev.type)}<div><b>${c ? esc(clsLabel(c)) : PICTO[ev.type]?.[2] || 'Eintrag'}</b><p>${fmtLong(ev.date)} · ${relDays(diffDays(t, ev.date))}</p></div></div>
+        <dl class="ev-dl">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+        ${ev.type === 'pruefung' && c && (a || ev.date <= t) ? `<button type="button" class="btn full" data-ev-noten>${icon('edit')} ${a ? 'Noten ansehen' : 'Noten eintragen'}</button>` : ''}`,
+      mount: (root, close) => root.querySelector('[data-ev-noten]')?.addEventListener('click', () => close('noten')),
+      actions: [{ label: 'Bearbeiten', value: 'edit' }, { label: 'Schließen', cls: 'primary', value: null }] });
+    if (r === 'edit') return editEvent(ev, { edit: true });
+    if (r === 'noten') examNoten(ev);
+  }
+  // Leistung zur Prüfung: verknüpft oder gleicher Kurs, höchstens 7 Tage auseinander
+  const examAssessment = e => live(S.data.assessments).find(x => x.eventId === e.id) || live(S.data.assessments).find(x => x.classId === e.classId && x.type !== 'vokabel' && Math.abs(diffDays(x.date, e.date)) <= 7) || null;
+  function examNoten(ev) {
+    const a = examAssessment(ev);
+    if (a) { S.view = 'kurse'; S.courseId = a.classId; S.classId = a.classId; S.courseTab = 'tests'; S.assessId = a.id; render(); }
+    else A.assessFromEvent({ eid: ev.id });
+  }
+  function examTodos() { // nach der Prüfung: To-do „Noten eintragen“, erledigt sich, sobald Noten da sind
+    if (!S.data) return;
+    const t = todayISO(), ab = addDaysISO(t, -30);
+    for (const e of live(S.data.events)) {
+      if (e.type !== 'pruefung' || !e.classId || !S.data.classes[e.classId] || S.data.classes[e.classId].deleted || e.date > t) continue;
+      const id = 'pnoten-' + e.id, td = S.data.todos[id], a = examAssessment(e);
+      const done = !!a && live(S.data.results).some(r => r.assessmentId === a.id && r.value != null);
+      if (!td) {
+        if (done || e.date < ab) continue;
+        const c = S.data.classes[e.classId];
+        commit(d => { d.todos[id] = { id, auto: 'pruefnoten', eid: e.id, cat: 'korrektur', text: `Noten eintragen: ${e.kind || 'Prüfung'}${c.subject ? ' ' + c.subject : ''}`, classId: e.classId, date: e.date, done: false, createdAt: now(), updatedAt: now() }; }, { sync: true });
+        continue;
+      }
+      if (td.deleted) continue;
+      if (done && !td.done) commit(d => { d.todos[id] = Object.assign({}, td, { done: true, autoDone: true, doneAt: now(), updatedAt: now() }); });
+      else if (!done && td.done && td.autoDone) commit(d => { d.todos[id] = Object.assign({}, td, { done: false, autoDone: false, doneAt: null, updatedAt: now() }); });
+    }
+  }
   async function editEvent(ev, preset = {}) {
     if (ev?.type === 'tausch' || preset.type === 'tausch') return swapDialog(ev, preset);
+    if (ev && !preset.edit) return eventInfo(ev);
     const isNew = !ev;
     const canSwap = isNew && classesSorted().length > 1;
     let type = ev?.type || preset.type || 'pruefung';
@@ -4875,7 +5051,7 @@
     const ausSel = new Set(linked.map(x => x.classId));
     let ausDate = null;
     const res = await openModal({
-      title: isNew ? 'Neuer Eintrag' : 'Eintrag bearbeiten', body,
+      title: isNew ? 'Neuer Eintrag' : `${evTitle(ev)} bearbeiten`, body,
       mount: (root, close) => {
         const ausPick = () => {
           const d = root.querySelector('#m-date').value;
@@ -5117,7 +5293,7 @@
         commit(d => { d.events[id] = { id, type: 'ausfall', kind: null, classId: cid, date, from: l.from, to: l.to, note: reason, updatedAt: now() }; });
         toast('Ausfall eingetragen', { undo: () => commit(d => { d.events[id] = { id, deleted: true, updatedAt: now() }; }) });
       }
-    } else if (r === 'ausfall-edit') editEvent(aus);
+    } else if (r === 'ausfall-edit') editEvent(aus, { edit: true });
     else if (r === 'tausch') swapDialog(null, { cid, date, from: l.from });
     else if (r === 'todo') todoDialog(null, { cid, date });
     else if (r === 'tausch-edit') swapDialog(sw);
@@ -5665,7 +5841,7 @@
       editAssessment(null, { cid, type: 'vokabel' });
     },
     async startGram() {
-      const cid = await pickCourse('Grammatiktest – welcher Kurs?', classesSorted().filter(c => c.vocab && studentsOf(c.id).length));
+      const cid = await pickCourse('Test – irregular verbs: welcher Kurs?', classesSorted().filter(c => c.vocab && studentsOf(c.id).length));
       if (!cid) return;
       openCourseTab(cid, 'tests');
       const id = await editAssessment(null, { cid, type: 'vokabel', scale: 'gram30' });
@@ -5676,7 +5852,9 @@
       if (cid) { S.zTab = 'noten'; S.zTerm = null; openCourseTab(cid, 'zeugnis'); }
     },
     todoToggle(d) { todoToggle(d.id); },
-    todoEdit(d) { const x = S.data.todos[d.id]; if (x) todoDialog(x); },
+    todoEdit(d) { const x = S.data.todos[d.id], e = x?.eid && S.data.events[x.eid];
+      if (x && x.auto === 'mehrarbeit') maAntrag(x.ym); else if (x && x.auto === 'pruefnoten' && e && !e.deleted) examNoten(e); else if (x) todoDialog(x); },
+    maAntrag(d) { maAntrag(d.ym); },
     newTodo(d) { todoDialog(null, { cid: d.cid || '', ...(d.date !== undefined ? { date: d.date } : {}) }); },
     todoFilter(d) { S.todoFilter = d.f || ''; render(); },
     todoFilterGo(d) { S.todoFilter = d.f || ''; S.view = 'todos'; saveUI(); render(); window.scrollTo(0, 0); },
@@ -5855,6 +6033,19 @@
     weekGo(d) { S.weekStart = d.ws; S.day = null; S.cardIdx = 0; render(); },
     weekToday() { S.weekStart = toISO(mondayOf(new Date())); S.day = null; S.cardIdx = 0; render(); },
     setDay(d) { S.day = d.day; render(); },
+    gradeModeWeek(d) { // nur diese Woche umstellen; gleich wie Standard → Ausnahme entfernen
+      const c = S.data.classes[S.classId]; if (!c) return;
+      const mw = Object.assign({}, c.modeWeeks || {});
+      if ((d.m === 'woche') === weeklyDefault(c)) delete mw[S.weekStart]; else mw[S.weekStart] = d.m;
+      S.day = null; updateClass(c.id, { modeWeeks: mw });
+    },
+    gradeModeDefault() {
+      const c = S.data.classes[S.classId]; if (!c) return;
+      const m = weeklyMode(c) ? 'woche' : 'stunde', mw = Object.assign({}, c.modeWeeks || {});
+      delete mw[S.weekStart];
+      for (const k of Object.keys(mw)) if (mw[k] === m) delete mw[k];
+      updateClass(c.id, { gradeMode: m, modeWeeks: mw }); toast(`${c.name}: ${m === 'woche' ? 'Wochennote' : 'Einzelstunden'} als Standard`);
+    },
     setMode(d) { S.mode = d.mode; S.cardIdx = 0; S.cardStay = null; saveUI(); render(); },
     toggleMissing() { S.onlyMissing = !S.onlyMissing; S.cardIdx = 0; render(); },
     addGrade(d) {
@@ -6187,5 +6378,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
 })();

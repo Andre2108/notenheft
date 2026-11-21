@@ -1,6 +1,20 @@
-# Notenheft 7.3.1 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.4 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.4 – Mehrarbeitsantrag per Mail, ruhiger Kopf
+
+- **Mehrarbeitsantrag auf Knopfdruck:** Ab dem letzten Schultag eines Monats erscheint ein To-do „Mehrarbeitsantrag … stellen“, wenn mindestens 4 verrechnete Stunden zusammenkommen. Antippen → „Per Mail senden“: Das private Daten-Repository füllt das Schulformular aus (Soll- und Iststunden je Tag, anrechenbare Ausfallstunden, Tabelle der Vertretungen und Ausfälle ohne Krankheitstage, Datum von heute, „nein“ angekreuzt) und schickt Word und PDF an die Schuladresse. Auch unter Planer → Mehrarbeit → „Antrag per Mail“.
+  - Soll = eigene Kurse laut Stundenplan plus wöchentliche Untis-Stunden ohne Kurs (z. B. LW), ohne Gottesdienst und Bereitschaft; 90 Minuten = 2, 45 Minuten = 1 Stunde, Wochenenden, Feiertage und Ferien bleiben leer.
+  - Ist = Soll minus „ersatzlos“ ausgefallene Stunden plus Vertretungen (auch in der Bereitschaft).
+- **Kopfbalken bleibt stehen:** Der dunkle Balken (Datum, Kurs, Kennzahlen) scrollt nicht mehr weg, nur der Inhalt darunter.
+- **Einträge erst ansehen:** Ein Eintrag aus Cockpit, Planer oder Kurs öffnet zuerst eine Übersicht (Art, Kurs, Datum, Stunden bis dahin, Notiz). Erst „Bearbeiten“ zeigt Art-Auswahl, Löschen, Abbrechen und Speichern.
+- **Eintragen nach Bereichen:** Noten · Termine & Unterricht · Organisation (neu: „Vertretung nachtragen“).
+- **„Grammatiktest“ heißt jetzt „Test – irregular verbs“.**
+- **Noteneintragung schließt sich:** Sobald das letzte fehlende Kind eines Kurses für die Woche eine Note hat, geht es zurück ins Cockpit (mit „Rückgängig“); das Wochen-To-do hakt sich ab.
+- **Wochennote oder Einzelstunden direkt beim Eintragen:** Kurs → Mündlich zeigt oben den Umschalter „Wochennote | Einzelstunden“. Er gilt nur für die angezeigte Woche; „als Standard“ übernimmt ihn für den Kurs.
+- **Noten zur Prüfung erst nach dem Termin:** Der Knopf „Noten eintragen“ erscheint erst ab dem Prüfungstag. Dann gibt es auch ein To-do „Noten eintragen: Klassenarbeit …“, das sich von selbst abhakt, sobald Noten da sind.
+- **Mehrarbeit:** LW zählt wie ein Kurs (auch wenn sie nur in WebUntis steht); entfällt sie laut WebUntis, hat das immer dienstliche Gründe: Sie zählt weiter als Iststunde (anrechenbare Ausfallstunde) und wird nicht gegengerechnet. Krankheitstage stehen nicht mehr in der Tabelle.
 
 ## Neu in Version 7.3.1 – Vertretungen im Cockpit
 
