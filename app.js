@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.4';
+  const APP_VERSION = '7.5.5';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -2185,8 +2185,8 @@
     const hours = sum(ls.filter(l => !l.cancelled).map(l => l.hours)) + sum(untisFremd(t).map(x => x.hours)), aus = ls.filter(l => l.cancelled).length;
     const hc = holidayCountdown(t);
     const right = !hc ? '' : hc.now ? `<div class="ck-hol"><small>Ferien</small><b>${esc(hc.now.name)}</b></div>`
-      : `<div class="ck-hol"><b>${hc.n}</b> <small>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name)}</small></div>`;
-    const sub = [`KW ${isoWeek(parseISO(t))}`, free ? esc(free) : ls.length ? plural(hours, 'Stunde', 'Stunden') : 'kein Unterricht', aus ? plural(aus, 'Ausfall', 'Ausfälle') : ''].filter(Boolean).join(' · ');
+      : `<div class="ck-hol"><b>${hc.n}</b> <small>${hc.n === 1 ? 'Schultag' : 'Schultage'} bis ${esc(hc.next.name.replace(/\s+\d{4}(\/\d{2,4})?$/, ''))}</small></div>`;
+    const sub = [`KW ${isoWeek(parseISO(t))}`, free ? esc(free) : ls.length ? plural(hours, 'Stunde', 'Stunden') : 'kein Unterricht', aus ? plural(aus, 'Ausfall', 'Ausfälle') : ''].filter(Boolean).map(x => `<span class="nw">${x}</span>`).join(' · ');
     const hh = new Date().getHours(), nm = S.data.prefs?.profil?.name;
     const greet = `${hh < 11 ? 'Guten Morgen' : hh < 17 ? 'Hallo' : 'Guten Abend'}${nm ? ', ' + esc(nm) : ''}!`;
     const dn = diffDays(heute, t);
