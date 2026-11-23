@@ -1809,3 +1809,9 @@ body.ksearching .main { padding-bottom: 70vh; }
 /* Knöpfe im dunklen Kopfbalken (z. B. Tage blättern in „Heute“, Monate in „Mehrarbeit“): dunkel statt weiß, Pfeil sichtbar */
 .main > .page-head:first-child .icon-btn, .main > .start-head:first-child .icon-btn { background: var(--head-2); border-color: var(--head-line); color: var(--head-text); }
 .main > .page-head:first-child .icon-btn:disabled { opacity: .4; }
+
+/* 7.5.4: Cockpit – Tage blättern (Pfeil oben links / oben rechts) */
+.ck-nav { display: flex; align-items: center; gap: 8px; }
+.ck-nav .ck-greet { flex: 1; min-width: 0; margin: 0 !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-nav .icon-btn { flex: none; }
+.ck-nav .btn.small { flex: none; background: var(--head-2); border-color: var(--head-line); color: var(--head-text); }

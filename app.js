@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.3';
+  const APP_VERSION = '7.5.4';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -217,6 +217,7 @@
     data: null, device: null,
     view: 'heute',
     heuteDate: null,
+    ckDate: null, // Cockpit: angezeigter Tag (null = heute)
     planWeek: toISO(mondayOf(new Date())),
     notenTab: 'erfassen',
     classId: null,
@@ -2141,10 +2142,10 @@
     items.sort((x, y) => x.date.localeCompare(y.date) || x.ord - y.ord || x.sort.localeCompare(y.sort));
     let html = '', last = '';
     for (const it of items) {
-      if (it.date !== last) { last = it.date; html += `<div class="ck-day">${diffDays(t, it.date) === 1 ? 'Morgen · ' : ''}${WD[wdOf(it.date)]} ${fmtISO(it.date)}</div>`; }
+      if (it.date !== last) { last = it.date; html += `<div class="ck-day">${diffDays(todayISO(), it.date) === 1 ? 'Morgen · ' : ''}${WD[wdOf(it.date)]} ${fmtISO(it.date)}</div>`; }
       html += it.html;
     }
-    return `<section class="section ck-demn"><div class="section-head"><h2>Demnächst</h2><span class="muted small">nächste 7 Tage</span></div><div class="ck-list">${html}</div></section>`;
+    return `<section class="section ck-demn"><div class="section-head"><h2>Demnächst</h2><span class="muted small">${t === todayISO() ? 'nächste 7 Tage' : `7 Tage ab ${fmtISO(t)}`}</span></div><div class="ck-list">${html}</div></section>`;
   }
   // Termine von heute als kleine Zeile im dunklen Kopf
   function cockpitHeuteChips(t) {
@@ -2171,10 +2172,13 @@
         return `<button type="button" class="ckw-c ${l.cancelled ? 'x' : ''}" ${ccStyle(l.cls)} data-action="lessonSheet" data-cid="${l.cls.id}" data-date="${d}" data-from="${l.from}" title="${esc(clsLabel(l.cls))}${l.cancelled ? ' – entfällt' : ''}">${esc(l.cls.name)} ${esc((l.cls.subject || '').slice(0, 1))}</button>`;
       }).join('')}</div>`;
     }
-    return `<section class="section ck-week"><div class="section-head"><h2>Diese Woche</h2><button type="button" class="link" data-action="goto" data-view="woche">Plan ${icon('right')}</button></div><div class="ckw">${h}</div></section>`;
+    return `<section class="section ck-week"><div class="section-head"><h2>${ws === weekKey(todayISO()) ? 'Diese Woche' : `KW ${isoWeek(parseISO(ws))}`}</h2><button type="button" class="link" data-action="ckWoche" data-ws="${ws}">Plan ${icon('right')}</button></div><div class="ckw">${h}</div></section>`;
   }
+  // Cockpit blättern: nächster/voriger Schultag (Sa/So werden übersprungen)
+  function ckStep(d, dir) { let x = d; do x = addDaysISO(x, dir); while (wdOf(x) > 4); return x; }
   function viewStart() {
-    const t = todayISO();
+    const heute = todayISO();
+    const t = S.ckDate || heute, isToday = t === heute;
     const free = freeReason(t);
     const cs = classesSorted();
     const ls = lessonsOn(t).filter(l => !l.away);
@@ -2185,10 +2189,15 @@
     const sub = [`KW ${isoWeek(parseISO(t))}`, free ? esc(free) : ls.length ? plural(hours, 'Stunde', 'Stunden') : 'kein Unterricht', aus ? plural(aus, 'Ausfall', 'Ausfälle') : ''].filter(Boolean).join(' · ');
     const hh = new Date().getHours(), nm = S.data.prefs?.profil?.name;
     const greet = `${hh < 11 ? 'Guten Morgen' : hh < 17 ? 'Hallo' : 'Guten Abend'}${nm ? ', ' + esc(nm) : ''}!`;
-    let html = `<div class="start-head ck-head"><p class="ck-greet">${greet}</p><div class="ck-top"><h1>${WD[wdOf(t)]}, ${fmtISO(t)} <small>${sub}</small></h1>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}${cockpitHeuteChips(t)}</div>`;
+    const dn = diffDays(heute, t);
+    const rel = isToday ? greet : dn === 1 ? 'Morgen' : dn === -1 ? 'Gestern' : dn > 0 ? `in ${dn} Tagen` : `vor ${-dn} Tagen`;
+    const nav = `<div class="ck-nav"><button type="button" class="icon-btn" data-action="ckPrev" aria-label="Vorheriger Tag" title="Vorheriger Tag">${icon('left')}</button>
+      <p class="ck-greet">${rel}</p>${isToday ? '' : '<button type="button" class="btn small" data-action="ckToday">Heute</button>'}
+      <button type="button" class="icon-btn" data-action="ckNext" aria-label="Nächster Tag" title="Nächster Tag">${icon('right')}</button></div>`;
+    let html = `<div class="start-head ck-head">${nav}<div class="ck-top"><h1>${WD[wdOf(t)]}, ${fmtISO(t)} <small>${sub}</small></h1>${right}</div>${cs.length && !free ? cockpitStrip(t) : ''}${cockpitHeuteChips(t)}</div>`;
     if (!cs.length) return html + noCourses();
-    const ga = cockpitOffen(t) + cockpitDemnaechst(t);
-    html += `<div class="ck-cols"><div class="ck-ga">${ga || `<p class="empty-line">${icon('check')} Nichts zu erledigen, in den nächsten 7 Tagen steht nichts an.</p>`}</div><div class="ck-gb">${cockpitWeek(t)}</div></div>`;
+    const ga = cockpitOffen(heute) + cockpitDemnaechst(t);
+    html += `<div class="ck-cols"><div class="ck-ga">${ga || `<p class="empty-line">${icon('check')} Nichts zu erledigen, in den 7 Tagen ${isToday ? '' : `ab ${fmtISO(t)} `}steht nichts an.</p>`}</div><div class="ck-gb">${cockpitWeek(t)}</div></div>`;
     return html;
   }
   // Reiter „Eintragen“: alles, was man neu anlegen kann, an einer Stelle
@@ -5583,7 +5592,7 @@
     const migrated = adoptData();
     if (migrated) { persistLocal(); scheduleSync(1000); }
     S.lastActivity = now();
-    S.heuteDate = null; S.planWeek = toISO(mondayOf(new Date())); S.weekStart = S.planWeek;
+    S.heuteDate = null; S.ckDate = null; S.planWeek = toISO(mondayOf(new Date())); S.weekStart = S.planWeek;
     if (S.startMenu !== false) S.view = 'start'; // beim Öffnen: Startmenü
     render();
     const nd = dedupeEntries();
@@ -6134,6 +6143,7 @@
     },
     goto(d) {
       if (d.view === 'kurse' && S.view === 'kurse') S.courseId = null;
+      if (d.view === 'start' && S.view === 'start') S.ckDate = null;
       S.view = d.view; S.detailStudent = null; saveUI(); render(); window.scrollTo(0, 0);
     },
     setupMode(d) { S.setupMode = d.m; render(); },
@@ -6157,6 +6167,10 @@
     dayPrev() { S.heuteDate = addDaysISO(S.heuteDate || todayISO(), -1); render(); },
     dayNext() { S.heuteDate = addDaysISO(S.heuteDate || todayISO(), 1); render(); },
     dayToday() { S.heuteDate = null; render(); },
+    ckPrev() { S.ckDate = ckStep(S.ckDate || todayISO(), -1); if (S.ckDate === todayISO()) S.ckDate = null; render(); },
+    ckNext() { S.ckDate = ckStep(S.ckDate || todayISO(), 1); if (S.ckDate === todayISO()) S.ckDate = null; render(); },
+    ckToday() { S.ckDate = null; render(); },
+    ckWoche(d) { S.planWeek = d.ws; S.view = 'woche'; render(); window.scrollTo(0, 0); },
     dayGo(d) { S.heuteDate = d.date; S.view = 'heute'; render(); window.scrollTo(0, 0); },
     planPrev() { S.planWeek = addDaysISO(S.planWeek, -7); render(); },
     planNext() { S.planWeek = addDaysISO(S.planWeek, 7); render(); },
@@ -6493,6 +6507,8 @@
       else if (e.key === 'n' || e.key === 'N') cardAdd('nb');
       else if (e.key === 'ArrowRight') A.cardNext();
       else if (e.key === 'ArrowLeft') A.cardPrev();
+    } else if (S.view === 'start') {
+      if (e.key === 'ArrowRight') A.ckNext(); else if (e.key === 'ArrowLeft') A.ckPrev();
     } else if (S.view === 'heute') {
       if (e.key === 'ArrowRight') A.dayNext(); else if (e.key === 'ArrowLeft') A.dayPrev();
     } else if (S.view === 'woche') {
