@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.4';
+  const APP_VERSION = '7.5.5';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -290,6 +290,8 @@
   }
   const adoptData = () => { const n = migrateNames(S.data); hydrateNames(); return n; };
   const missingNames = () => live(S.data.students).filter(st => !(S.device.names || {})[st.id]).length;
+  const hasLocalName = st => !!(S.device.names || {})[st.id];
+  const shortKidName = r => `${r.first} ${r.last ? r.last[0] + '.' : ''}`.trim(); // „Vorname N.“
 
   const live = obj => Object.values(obj || {}).filter(x => !x.deleted);
   const classesSorted = () => live(S.data.classes).sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.subject || '', b.subject || ''));
@@ -1180,7 +1182,7 @@
         pushStatusWrite().catch(e => console.warn('Push-Status:', e));
         ewhCatalogRefresh().then(() => softRender()).catch(e => console.warn('Katalog:', e));
         pcExport().catch(e => console.warn('PC-Termine:', e));
-        if (!S.sync.nameHint && missingNames()) { S.sync.nameHint = true; toast(`Auf diesem Gerät fehlen ${missingNames()} Namen – Mehr → Namensliste importieren.`, { ms: 7000 }); }
+        if (!S.sync.nameHint && missingNames()) { S.sync.nameHint = true; toast(`Auf diesem Gerät fehlen ${missingNames()} Namen – Mehr → Einstellungen → „Namen aus Kürzel-Tabelle“.`, { ms: 7000 }); }
       } catch (e) {
         console.warn('Sync:', e);
         if (e.code === 'WRONG_PW') { S.sync.state = 'pwchanged'; S.sync.msg = 'Die Daten im GitHub-Speicher sind mit einem anderen Passwort verschlüsselt.'; }
@@ -4092,16 +4094,16 @@
         if (s) used.add(s.id);
         return Object.assign({}, r, { s });
       });
-      // Neue Kinder heißen „Vorname N.“, bei Doppelungen im Kurs mit vollem Nachnamen
-      const short = r => `${r.first} ${r.last ? r.last[0] + '.' : ''}`.trim();
+      // Neue Kinder (und vorhandene, deren Name auf diesem Gerät fehlt) heißen „Vorname N.“, bei Doppelungen im Kurs mit vollem Nachnamen
+      const brauchtName = r => !r.s || !hasLocalName(r.s);
       const cnt = {};
-      for (const k of [...sts.map(s => normName(s.name)), ...out.filter(r => !r.s).map(r => normName(short(r)))]) cnt[k] = (cnt[k] || 0) + 1;
-      for (const r of out) if (!r.s) r.name = (cnt[normName(short(r))] > 1 ? `${r.first} ${r.last}`.trim() : short(r)).slice(0, 80);
+      for (const k of [...sts.filter(hasLocalName).map(s => normName(s.name)), ...out.filter(brauchtName).map(r => normName(shortKidName(r)))]) cnt[k] = (cnt[k] || 0) + 1;
+      for (const r of out) if (brauchtName(r)) r.name = (cnt[normName(shortKidName(r))] > 1 ? `${r.first} ${r.last}`.trim() : shortKidName(r)).slice(0, 80);
       return { out, rest: sts.filter(s => !used.has(s.id)).length };
     };
     const preview = sheet => {
       const { out, rest } = plan(sheet);
-      return `<div class="imp-list">${out.map(r => `<div class="imp-row"><span class="imp-name">${esc(r.s ? r.s.name : r.name)}</span><span class="res-chip none">${esc(r.km)}</span><span class="muted small">${r.s ? (r.s.km === r.km ? 'schon da' : 'vorhanden – Kürzel ergänzt') : 'neu'}</span></div>`).join('')}</div>
+      return `<div class="imp-list">${out.map(r => `<div class="imp-row"><span class="imp-name">${esc(r.name || r.s.name)}</span><span class="res-chip none">${esc(r.km)}</span><span class="muted small">${r.s ? (r.name ? 'vorhanden – Name ergänzt' : r.s.km === r.km ? 'schon da' : 'vorhanden – Kürzel ergänzt') : 'neu'}</span></div>`).join('')}</div>
         <p class="muted small">${plural(out.filter(r => r.s).length, 'Kind', 'Kinder')} erkannt, ${plural(out.filter(r => !r.s).length, 'Kind', 'Kinder')} neu.${rest ? ` ${plural(rest, 'Kind', 'Kinder')} im Kurs ${rest === 1 ? 'steht' : 'stehen'} nicht in diesem Blatt und ${rest === 1 ? 'bleibt' : 'bleiben'} unverändert.` : ''}</p>`;
     };
     const res = await openModal({
@@ -4113,19 +4115,50 @@
       actions: [{ label: 'Abbrechen', value: null }, { label: 'Übernehmen', cls: 'primary', run: root => plan(root.querySelector('#m-sh')?.value || guess).out }]
     });
     if (!res) return;
-    let upd = 0, add = 0, moved = 0;
+    let upd = 0, add = 0, moved = 0, benannt = 0;
     commit(d => {
       const usedC = usedCodes(d), nm = S.device.names || (S.device.names = {});
       res.forEach((r, i) => {
         const pos = i + 1;
         if (r.s) {
+          if (r.name && !nm[r.s.id]) { nm[r.s.id] = r.name; benannt++; }
           const old = d.students[r.s.id];
           if (old.km !== r.km || old.pos !== pos) { if (old.km !== r.km) upd++; else moved++; d.students[r.s.id] = Object.assign({}, old, { km: r.km, pos, updatedAt: now() }); }
         } else { const id = uid(); nm[id] = r.name; d.students[id] = { id, classId: c.id, code: newCode(usedC), km: r.km, pos, updatedAt: now() }; add++; }
       });
     });
-    toast(upd || add || moved ? `${plural(add, 'Kind', 'Kinder')} neu, ${upd} Kürzel ergänzt${moved ? ', Reihenfolge wie in der Tabelle' : ''}` : 'Alles war schon aktuell');
+    toast(upd || add || moved || benannt ? `${plural(add, 'Kind', 'Kinder')} neu, ${upd} Kürzel ergänzt${benannt ? `, ${plural(benannt, 'Name', 'Namen')} ergänzt` : ''}${moved ? ', Reihenfolge wie in der Tabelle' : ''}` : 'Alles war schon aktuell');
     kmRetryPending();
+  }
+  // Neues Gerät: Kinder sind per Sync da (nur Kürzel), die Namen fehlen. Alle Kurse auf einmal über „Kürzel (final)“ aus der Kürzel-Tabelle benennen.
+  // Gelesen werden nur Vorname, Nachname und Kürzel; die Namen bleiben lokal auf diesem Gerät (S.device.names), nie im Sync.
+  async function namesFromKuerzel(file) {
+    if (!file || !S.data) return;
+    let sheets;
+    try { sheets = await readXlsx(file); } catch (e) { return toast(e.message, { error: true }); }
+    const tables = {}, global = new Map();
+    for (const name of Object.keys(sheets)) {
+      const rows = sheetTable({ [name]: sheets[name] }, name, ['Vorname', 'Nachname', 'Kürzel'])
+        .map(o => ({ first: String(o['vorname'] ?? '').trim(), last: String(o['nachname'] ?? '').trim(), km: String(o['kürzel (final)'] ?? pick(o, 'kürzel') ?? '').trim() }))
+        .filter(r => r.km && (r.first || r.last));
+      if (!rows.length) continue;
+      tables[normKurs(name)] = new Map(rows.map(r => [r.km, r]));
+      for (const r of rows) global.set(r.km, global.has(r.km) && global.get(r.km) !== r ? null : r); // null = mehrdeutig
+    }
+    if (!Object.keys(tables).length) return toast('Keine Tabelle mit „Vorname“, „Nachname“ und „Kürzel (final)“ gefunden.', { error: true });
+    const nm = S.device.names || (S.device.names = {});
+    let n = 0;
+    for (const c of classesSorted()) {
+      const sts = studentsOf(c.id), blatt = tables[normKurs(c.name)];
+      const treffer = sts.filter(s => !hasLocalName(s) && s.km).map(s => ({ s, r: blatt?.get(s.km) || global.get(s.km) || null })).filter(x => x.r);
+      if (!treffer.length) continue;
+      const cnt = {};
+      for (const k of [...sts.filter(hasLocalName).map(s => normName(s.name)), ...treffer.map(x => normName(shortKidName(x.r)))]) cnt[k] = (cnt[k] || 0) + 1;
+      for (const { s, r } of treffer) { nm[s.id] = (cnt[normName(shortKidName(r))] > 1 ? `${r.first} ${r.last}`.trim() : shortKidName(r)).slice(0, 80); n++; }
+    }
+    hydrateNames(); render(); persistLocal();
+    const rest = missingNames();
+    toast(`${plural(n, 'Name', 'Namen')} aus der Kürzel-Tabelle ergänzt${rest ? ` · ${rest} ohne passendes Kürzel` : ''}`, { ms: rest ? 7000 : 3200 });
   }
 
   /* ---------- Zeugnis & Blaue Briefe ---------- */
@@ -4923,11 +4956,13 @@
       <section class="panel">
         <h2>Namensliste &amp; Datenschutz</h2>
         <p class="muted small">Online (GitHub) liegen nur zufällige Kürzel wie <strong>K7F3Q</strong>. Die Klarnamen bleiben auf jedem Gerät lokal und verschlüsselt. Schreib deshalb keine Klarnamen in Notizen oder To-dos.</p>
-        ${missingNames() ? `<p class="warn-t"><strong>Auf diesem Gerät fehlen ${missingNames()} Namen.</strong> Hole sie mit „Namensliste importieren“.</p>` : '<p class="ok-t small">Alle Namen sind auf diesem Gerät vorhanden.</p>'}
+        ${missingNames() ? `<p class="warn-t"><strong>Auf diesem Gerät fehlen ${missingNames()} Namen.</strong> Am einfachsten: „Namen aus Kürzel-Tabelle“ und die Kürzel-Tabelle aus OneDrive wählen. Oder „Namensliste importieren“ mit dem Code vom anderen Gerät.</p>` : '<p class="ok-t small">Alle Namen sind auf diesem Gerät vorhanden.</p>'}
         <div class="btnrow">
+          <label class="btn ${missingNames() ? 'primary' : ''} file-btn">${icon('sheet')} Namen aus Kürzel-Tabelle<input type="file" accept=".xlsx" data-change="namesFromKuerzel"></label>
           <button type="button" class="btn" data-action="makeNameList">${icon('key')} Namensliste für anderes Gerät</button>
           <button type="button" class="btn" data-action="importNameList">${icon('download')} Namensliste importieren</button>
         </div>
+        <p class="muted small">„Namen aus Kürzel-Tabelle“ liest nur Vorname, Nachname und „Kürzel (final)“ und benennt damit alle Kinder ohne Namen in allen Kursen. Die Namen bleiben auf diesem Gerät.</p>
       </section>
       <section class="panel feature ${pk ? 'on' : ''}">
         <div class="feature-ic">${icon('face')}</div>
@@ -5920,7 +5955,7 @@
         requestPersist();
         S.view = 'start'; S.lastActivity = now(); saveUI();
         render();
-        toast(missingNames() ? `Verbunden. Es fehlen noch ${missingNames()} Namen – Mehr → Namensliste importieren.` : 'Verbunden – Daten geladen.', { ms: missingNames() ? 7000 : 3200 });
+        toast(missingNames() ? `Verbunden. Es fehlen noch ${missingNames()} Namen – Mehr → Einstellungen → „Namen aus Kürzel-Tabelle“.` : 'Verbunden – Daten geladen.', { ms: missingNames() ? 7000 : 3200 });
         syncNow();
       });
     },
@@ -6028,6 +6063,7 @@
     maErsatzlos(v, el) { const id = el.dataset.eid; commit(d => { const e = d.events[id]; if (e) d.events[id] = Object.assign({}, e, { ersatzlos: el.checked, updatedAt: now() }); }); },
     importKA(v, el) { const file = el.files && el.files[0]; el.value = ''; importKA(file); },
     importKuerzel(v, el) { const file = el.files && el.files[0]; el.value = ''; importKuerzel(file); },
+    namesFromKuerzel(v, el) { const file = el.files && el.files[0]; el.value = ''; namesFromKuerzel(file); },
     importKm(v, el) { const file = el.files && el.files[0]; el.value = ''; kmImportFile(file); },
     setZTerm(v) { S.zTerm = v; render(); },
     setSQTerm(v) { S.sqTerm = v; render(); },
@@ -6654,5 +6690,5 @@
   render();
 
   if (location.hash === '#test') window.__nh = { S, Vault, mergeData, canon, syncNow, lock, lessonsOn, courseStats, examInfo, buildImport, readXlsx, Passkey, calc, termsFor, termCfg, vocabLabel, gridLabel, gridValue, toPoints, warnInfo, render, liveEntries, dedupeEntries,
-    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, printSheet, notenExportSheets, xlsxBlob, zeugnisSicherungTodo, ausOffen, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
+    emptyData, defaultDevice, commit, addStudentsTo, hydrateNames, kmEnsureKey, kmDecrypt, kmCheck, kmProcess, kmApply, kmFindClass, kmInbox, kmPendingList, kmRetryPending, kmShowCode, importKuerzel, namesFromKuerzel, C, A, examsRequired, examsLeft, missingOverview, heuteCounts, todoReminders, kmMissingResults, pcExport, kmEncryptFor, kmImportText, planExport, weeklyGradeTodo, nsTodoSync, weekHasLessons, lessonWeek, rangeFor, rangeOptions, nameKey, studentsOf, kmOrderCheck, kmOrderApply, kmCalCheck, kmCalApply, calItemsOn, calDone, untisDay, untisFremd, pushStatus, pushStatusWrite, GH, printSheet, notenExportSheets, xlsxBlob, zeugnisSicherungTodo, ausOffen, isNebenaufsicht, untisAuswerten, maAntragDaten, maAntragTodo, maSollTag, examTodos, regelAusfall };
 })();

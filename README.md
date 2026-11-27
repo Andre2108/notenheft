@@ -1,6 +1,12 @@
-# Notenheft 7.5.4 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.5.5 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.5.5 – Namen aus der Kürzel-Tabelle auf neuen Geräten
+
+- **Neues Gerät ohne Namen?** Mehr → Einstellungen → „Namensliste & Datenschutz“ → **Namen aus Kürzel-Tabelle** und die `Kürzel-Tabelle_<Schuljahr>.xlsx` aus OneDrive wählen. Alle Kinder ohne Namen bekommen ihn über „Kürzel (final)“ – in allen Kursen auf einmal. Vorhandene Namen bleiben unverändert.
+- **Kurs → Kinder → „Aus Kürzel-Tabelle übernehmen“** ergänzt jetzt auch fehlende Namen bei Kindern, die schon da sind (bisher nur „schon da“).
+- Gelesen werden nur Vorname, Nachname und „Kürzel (final)“. Die Namen bleiben lokal auf dem Gerät, synchronisiert werden weiter nur Kürzel.
 
 ## Neu in Version 7.5.4 – Cockpit: Tage blättern
 
