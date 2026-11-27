@@ -1,6 +1,12 @@
-# Notenheft 7.5.5 – Stundenplan, Termine & Noten, verschlüsselt
+# Notenheft 7.5.6 – Stundenplan, Termine & Noten, verschlüsselt
 
 Eine Web-App (PWA) für iPhone und Windows-Laptop: Stundenplan mit Heute-Ansicht, Prüfungs-Countdown, Unterrichtsausfälle und Ferien – kombiniert mit der schnellen Erfassung mündlicher Noten (1–6).
+
+## Neu in Version 7.5.6 – Oberstufenkurse finden ihr Blatt in der Kürzel-Tabelle
+
+- **„Namen aus Kürzel-Tabelle“** ordnet Kurse wie „Q2“ (Deutsch) jetzt dem Blatt „Q2-D-GK“ zu, „Q1“ (Englisch) dem Blatt „Q1-E-LK“ (Stufe muss passen; bei mehreren Blättern entscheiden Fach und GK/LK). Bisher blieben dort Kinder ohne Namen, deren Kürzel auch in einem anderen Blatt vorkommt.
+- Namen kommen nur noch aus dem Blatt des eigenen Kurses – Kürzel sind nur je Lerngruppe eindeutig. Findet sich kein Blatt, nennt der Hinweis den Kurs.
+- Auch „Aus Kürzel-Tabelle übernehmen“ im Kurs wählt das passende Blatt jetzt vor.
 
 ## Neu in Version 7.5.5 – Namen aus der Kürzel-Tabelle auf neuen Geräten
 

@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.5';
+  const APP_VERSION = '7.5.6';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -4085,7 +4085,7 @@
     const names = Object.keys(tables);
     if (!names.length) return toast('Keine Tabelle mit „Vorname“, „Nachname“ und „Kürzel (final)“ gefunden.', { error: true });
     const want = normKurs(c.name);
-    const guess = names.find(n => normKurs(n) === want) || names.find(n => want && (normKurs(n).includes(want) || want.includes(normKurs(n)))) || names[0];
+    const guess = kursBlatt(c, names) || names.find(n => normKurs(n) === want) || names.find(n => want && (normKurs(n).includes(want) || want.includes(normKurs(n)))) || names[0];
     const plan = sheet => {
       const sts = studentsOf(c.id), used = new Set();
       const out = tables[sheet].map(r => {
@@ -4136,21 +4136,25 @@
     if (!file || !S.data) return;
     let sheets;
     try { sheets = await readXlsx(file); } catch (e) { return toast(e.message, { error: true }); }
-    const tables = {}, global = new Map();
+    const tables = {};
     for (const name of Object.keys(sheets)) {
       const rows = sheetTable({ [name]: sheets[name] }, name, ['Vorname', 'Nachname', 'Kürzel'])
         .map(o => ({ first: String(o['vorname'] ?? '').trim(), last: String(o['nachname'] ?? '').trim(), km: String(o['kürzel (final)'] ?? pick(o, 'kürzel') ?? '').trim() }))
         .filter(r => r.km && (r.first || r.last));
-      if (!rows.length) continue;
-      tables[normKurs(name)] = new Map(rows.map(r => [r.km, r]));
-      for (const r of rows) global.set(r.km, global.has(r.km) && global.get(r.km) !== r ? null : r); // null = mehrdeutig
+      if (rows.length) tables[name] = new Map(rows.map(r => [r.km, r]));
     }
     if (!Object.keys(tables).length) return toast('Keine Tabelle mit „Vorname“, „Nachname“ und „Kürzel (final)“ gefunden.', { error: true });
+    // Kürzel sind nur je Lerngruppe eindeutig (dasselbe Kürzel steht in anderen Blättern für andere Kinder) –
+    // deshalb nur aus dem Blatt des Kurses benennen, nie tabellenweit.
     const nm = S.device.names || (S.device.names = {});
     let n = 0;
+    const ohneBlatt = [];
     for (const c of classesSorted()) {
-      const sts = studentsOf(c.id), blatt = tables[normKurs(c.name)];
-      const treffer = sts.filter(s => !hasLocalName(s) && s.km).map(s => ({ s, r: blatt?.get(s.km) || global.get(s.km) || null })).filter(x => x.r);
+      const sts = studentsOf(c.id);
+      if (!sts.some(s => !hasLocalName(s) && s.km)) continue;
+      const bn = kursBlatt(c, Object.keys(tables)), blatt = bn ? tables[bn] : null;
+      if (!blatt) { ohneBlatt.push(clsLabel(c)); continue; }
+      const treffer = sts.filter(s => !hasLocalName(s) && s.km).map(s => ({ s, r: blatt.get(s.km) || null })).filter(x => x.r);
       if (!treffer.length) continue;
       const cnt = {};
       for (const k of [...sts.filter(hasLocalName).map(s => normName(s.name)), ...treffer.map(x => normName(shortKidName(x.r)))]) cnt[k] = (cnt[k] || 0) + 1;
@@ -4158,7 +4162,18 @@
     }
     hydrateNames(); render(); persistLocal();
     const rest = missingNames();
-    toast(`${plural(n, 'Name', 'Namen')} aus der Kürzel-Tabelle ergänzt${rest ? ` · ${rest} ohne passendes Kürzel` : ''}`, { ms: rest ? 7000 : 3200 });
+    toast(`${plural(n, 'Name', 'Namen')} aus der Kürzel-Tabelle ergänzt${ohneBlatt.length ? ` · kein Tabellenblatt für ${ohneBlatt.join(', ')} (Kurs → Kinder → „Aus Kürzel-Tabelle übernehmen“)` : rest ? ` · ${rest} ohne passendes Kürzel` : ''}`, { ms: rest || ohneBlatt.length ? 9000 : 3200 });
+  }
+  // Tabellenblatt eines Kurses: „Q2“ (Deutsch, GK) → „Q2-D-GK“, „05d“ → „5d“. Stufe/Klasse muss passen, bei mehreren entscheiden Fach und GK/LK.
+  function kursBlatt(c, blaetter) {
+    const tk = s => String(s || '').toLowerCase().split(/[^0-9a-zäöüß]+/).filter(Boolean).map(x => x.replace(/^0+(?=\d)/, ''));
+    const kurs = new Set([...tk(c.name), ...tk(c.kmKurs)]), stufe = tk(c.name).filter(x => /\d/.test(x) || /^(ef|q1|q2)$/.test(x));
+    const fach = String(c.subject || '').toLowerCase().replace(/[^a-zäöüß]/g, '');
+    const kandidaten = blaetter.filter(b => { const t = tk(b); return stufe.length ? stufe.every(x => t.includes(x)) : tk(c.name).every(x => t.includes(x)); });
+    if (kandidaten.length < 2) return kandidaten[0] || null;
+    const punkte = b => tk(b).reduce((p, x) => p + (kurs.has(x) ? 2 : 0) + (x.length <= 2 && /^[a-zäöüß]+$/.test(x) && fach.startsWith(x) ? 1 : 0), 0);
+    const best = Math.max(...kandidaten.map(punkte)), top = kandidaten.filter(b => punkte(b) === best);
+    return top.length === 1 ? top[0] : null;
   }
 
   /* ---------- Zeugnis & Blaue Briefe ---------- */
