@@ -1,7 +1,7 @@
 /*! Notenheft 6.5 – Stundenplan, Termine & mündliche Noten, Ende-zu-Ende-verschlüsselt. MIT-Lizenz. */
 'use strict';
 (() => {
-  const APP_VERSION = '7.5.6';
+  const APP_VERSION = '7.5.7';
   const LS_VAULT = 'notenheft.vault.v1';
   const LS_UI = 'notenheft.ui.v2';
   const LS_PASSKEY = 'notenheft.passkey.v1';
@@ -4013,7 +4013,7 @@
   // Alles für die automatisch erzeugte Ganzjahresplanung (keine Namen von Kindern)
   function planExport() {
     const tc = termCfg(), P = periods();
-    const kurse = classesSorted().map(c => ({ id: c.id, kurs: clsLabel(c), name: c.name, fach: c.subject || '', raum: c.room || '', stufe: levelOf(c),
+    const kurse = classesSorted().map(c => ({ id: c.id, kurs: clsLabel(c), name: c.name, fach: c.subject || '', raum: c.room || '', stufe: levelOf(c), farbe: clsColor(c),
       wochenstunden: weeklyHours(c), arbeiten: { HJ1: examsRequired(c, 'HJ1'), HJ2: examsRequired(c, 'HJ2') },
       raster: (c.slots || []).map(sl => ({ tag: sl.wd, von: sl.from, bis: sl.to, raum: sl.room || '', ab: sl.validFrom || '', bisDatum: sl.validTo || '', beginn: periodTimes(sl.from, sl.to).start, ende: periodTimes(sl.from, sl.to).end })) }));
     const stunden = [];
